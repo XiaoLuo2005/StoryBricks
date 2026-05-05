@@ -629,11 +629,13 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   targetImage: {fileID: 1817568418}
   serverUrl: http://39.97.174.49:8800/generate
-  prompt: A cute cartoon rabbit reading a storybook in a cozy room.
   model: wanx-v1
+  prompt: A cute cartoon rabbit reading a storybook in a cozy room.
   markerPromptMappings:
   - markerId: 2
     prompt: A cute pig reading a storybook in a cozy room.
+  - markerId: 4
+    prompt: The rabbit is eating carrot
 --- !u!4 &1448845937
 Transform:
   m_ObjectHideFlags: 0
