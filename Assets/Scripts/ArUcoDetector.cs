@@ -101,17 +101,13 @@ public class ArUcoDetector : MonoBehaviour
                         {
                             Debug.Log($"<color=green>识别到 ArUco 码 ID:{id} (字典: DICT_4X4_50)</color>");
 
-                            if (id == 0)
+                            if (imageGenClient != null)
                             {
-                                if (imageGenClient != null)
-                                {
-                                    imageGenClient.GenerateImage();
-                                    Debug.Log("<color=green>ID:0 触发生图请求。</color>");
-                                }
-                                else
-                                {
-                                    Debug.LogWarning("检测到 ID:0，但未绑定 imageGenClient。");
-                                }
+                                imageGenClient.GenerateImageForMarker(id);
+                            }
+                            else
+                            {
+                                Debug.LogWarning($"检测到 ArUco ID:{id}，但未绑定 imageGenClient。");
                             }
                         }
                     }
@@ -130,12 +126,43 @@ public class ArUcoDetector : MonoBehaviour
 
     void OnDestroy()
     {
-        if (webCamTexture != null) webCamTexture.Stop();
-        if (rgbaMat != null) rgbaMat.Dispose();
-        if (dictionary != null) dictionary.Dispose();
-        if (detectorParams != null) detectorParams.Dispose();
-        if (arucoDetector != null) arucoDetector.Dispose();
-        if (outputTexture != null) Destroy(outputTexture);
+        if (webCamTexture != null)
+        {
+            webCamTexture.Stop();
+            Destroy(webCamTexture);
+            webCamTexture = null;
+        }
+
+        if (arucoDetector != null)
+        {
+            arucoDetector.Dispose();
+            arucoDetector = null;
+        }
+
+        if (detectorParams != null)
+        {
+            detectorParams.Dispose();
+            detectorParams = null;
+        }
+
+        if (dictionary != null)
+        {
+            dictionary.Dispose();
+            dictionary = null;
+        }
+
+        if (rgbaMat != null)
+        {
+            rgbaMat.Dispose();
+            rgbaMat = null;
+        }
+
+        if (outputTexture != null)
+        {
+            Destroy(outputTexture);
+            outputTexture = null;
+        }
+
         reportedIds.Clear();
     }
 }
