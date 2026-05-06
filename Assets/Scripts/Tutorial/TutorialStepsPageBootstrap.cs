@@ -87,6 +87,14 @@ public class TutorialStepsPageBootstrap : MonoBehaviour
         titleRt.offsetMin = Vector2.zero;
         titleRt.offsetMax = Vector2.zero;
 
+        if (config.previewModelPrefab != null)
+        {
+            var previewBtn = CreateTopBarPreviewButton(topRt, "Preview3DButton", "3D 预览");
+            var overlay = canvasGo.AddComponent<TutorialPreview3DOverlay>();
+            overlay.Configure(config.previewModelPrefab, BuiltinUIFont);
+            previewBtn.onClick.AddListener(overlay.Open);
+        }
+
         var bottomBar = CreateUiObject<Image>(root, "BottomBar");
         var botRt = bottomBar.rectTransform;
         botRt.anchorMin = new Vector2(0f, 0f);
@@ -209,6 +217,34 @@ public class TutorialStepsPageBootstrap : MonoBehaviour
         slider.wholeNumbers = false;
         slider.value = 0f;
         return slider;
+    }
+
+    static Button CreateTopBarPreviewButton(RectTransform topBar, string name, string label)
+    {
+        var go = CreateUiChild(topBar, name);
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(1f, 0.5f);
+        rt.anchorMax = new Vector2(1f, 0.5f);
+        rt.pivot = new Vector2(1f, 0.5f);
+        rt.sizeDelta = new Vector2(220f, 72f);
+        rt.anchoredPosition = new Vector2(-28f, 0f);
+
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(235, 238, 245, 255);
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        var textGo = CreateUiChild(go.transform, "Text");
+        StretchFull(textGo.GetComponent<RectTransform>());
+        var t = textGo.AddComponent<Text>();
+        t.font = BuiltinUIFont;
+        t.fontSize = 26;
+        t.alignment = TextAnchor.MiddleCenter;
+        t.color = new Color32(40, 44, 52, 255);
+        t.text = label;
+        t.horizontalOverflow = HorizontalWrapMode.Overflow;
+        t.verticalOverflow = VerticalWrapMode.Truncate;
+        return btn;
     }
 
     static Button CreateTopBarBackButton(RectTransform topBar, string name, string label)

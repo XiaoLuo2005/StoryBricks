@@ -8,4 +8,7 @@ public class TutorialStepsConfig : ScriptableObject
     public string portfolioSceneName = "BrickLibrary";
     [Tooltip("按顺序排列的步骤图")]
     public Sprite[] steps;
+
+    [Tooltip("可选；整模 3D 预览用。将 Studio 导出的模型做成 Prefab 拖到这里；留空则教程页不显示「3D 预览」")]
+    public GameObject previewModelPrefab;
 }
