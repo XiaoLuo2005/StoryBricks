@@ -259,6 +259,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   config: {fileID: 11400000, guid: e0f1a2b3c4d5e6f77889900112233445, type: 2}
+  enableVoiceTutor: 1
+  tutorGatewayBaseUrl: http://127.0.0.1:8787
 --- !u!1001 &3690171076769045219
 PrefabInstance:
   m_ObjectHideFlags: 0

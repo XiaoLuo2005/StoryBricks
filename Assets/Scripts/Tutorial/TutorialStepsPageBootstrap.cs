@@ -12,6 +12,12 @@ public class TutorialStepsPageBootstrap : MonoBehaviour
 {
     public TutorialStepsConfig config;
 
+    [Header("AI 语言助教")]
+    [Tooltip("开启后在屏幕右侧显示面板；需运行 Server/storybricks-tutor-gateway 并配置 DASHSCOPE_API_KEY")]
+    public bool enableVoiceTutor;
+    [Tooltip("网关根地址，例如 http://127.0.0.1:8787")]
+    public string tutorGatewayBaseUrl = "http://127.0.0.1:8787";
+
     StepViewerUI _viewer;
 
     /// <summary>
@@ -169,12 +175,36 @@ public class TutorialStepsPageBootstrap : MonoBehaviour
         _viewer.progressBar = slider;
         _viewer.stepFadeGroup = fadeGroup;
         _viewer.steps = config.steps;
+        var stepCount = config.steps != null ? config.steps.Length : 0;
+        var hints = config.stepHints;
+        if (stepCount > 0 && config.stepHintsSourceText != null &&
+            !string.IsNullOrWhiteSpace(config.stepHintsSourceText.text))
+        {
+            var parsed = TutorialTutorSourceText.ParseStepHintsLines(config.stepHintsSourceText.text, stepCount);
+            if (parsed != null)
+                hints = parsed;
+        }
+        _viewer.stepHints = hints;
+
+        var details = config.stepTutorDetails;
+        if (stepCount > 0 && config.stepTutorDetailsSourceText != null &&
+            !string.IsNullOrWhiteSpace(config.stepTutorDetailsSourceText.text))
+        {
+            var parsed = TutorialTutorSourceText.ParseStepDetailBlocks(config.stepTutorDetailsSourceText.text, stepCount);
+            if (parsed != null)
+                details = parsed;
+        }
+        _viewer.stepTutorDetails = details;
 
         prevBtn.onClick.AddListener(_viewer.PrevStep);
         nextBtn.onClick.AddListener(_viewer.NextStep);
 
         var swipe = stepZone.gameObject.AddComponent<SwipeStepNavigator>();
         swipe.viewer = _viewer;
+
+        TutorialMascotView.TryAddToCanvas(root, config.mascotLottieJsonText, bottomH);
+
+        TutorialVoiceTutorUi.TryBuild(root, config, _viewer, tutorGatewayBaseUrl, BuiltinUIFont, enableVoiceTutor, topH, bottomH);
     }
 
     static Slider CreateReadOnlyProgressSlider(Transform parent, string name)
@@ -360,6 +390,34 @@ public class StepViewerUI : MonoBehaviour
 
     public Sprite[] steps;
 
+    [Tooltip("与 steps 对齐；可由 TutorialStepsConfig 注入")]
+    public string[] stepHints;
+
+    [Tooltip("与 steps 对齐；可由 TutorialStepsConfig 注入")]
+    public TutorialStepTutorDetail[] stepTutorDetails;
+
+    public int CurrentStepIndex => _current;
+    public int StepCount => steps != null ? steps.Length : 0;
+
+    public string GetCurrentStepHint()
+    {
+        if (stepHints == null || stepHints.Length == 0)
+            return "";
+        if (_current < 0 || _current >= stepHints.Length)
+            return "";
+        var h = stepHints[_current];
+        return h != null ? h.Trim() : "";
+    }
+
+    public TutorialStepTutorDetail GetCurrentStepTutorDetail()
+    {
+        if (stepTutorDetails == null || stepTutorDetails.Length == 0)
+            return null;
+        if (_current < 0 || _current >= stepTutorDetails.Length)
+            return null;
+        return stepTutorDetails[_current];
+    }
+
     int _current;
 
     void Start()
@@ -371,6 +429,8 @@ public class StepViewerUI : MonoBehaviour
     public void SetSteps(Sprite[] s)
     {
         steps = s;
+        stepHints = null;
+        stepTutorDetails = null;
         _current = 0;
         UpdateUI();
     }

@@ -1,5 +1,22 @@
 {
   "dependencies": {
+    "com.gilzoide.lottie-player": {
+      "version": "https://github.com/gilzoide/unity-lottie-player.git#1.1.1",
+      "depth": 0,
+      "source": "git",
+      "dependencies": {},
+      "hash": "405223bfd248c57a58d6e17979d5d732aa2392fe"
+    },
+    "com.unity.burst": {
+      "version": "1.8.17",
+      "depth": 0,
+      "source": "registry",
+      "dependencies": {
+        "com.unity.mathematics": "1.2.1",
+        "com.unity.modules.jsonserialize": "1.0.0"
+      },
+      "url": "https://packages.unity.cn"
+    },
     "com.unity.collab-proxy": {
       "version": "2.12.4",
       "depth": 0,
@@ -56,6 +73,13 @@
     "com.unity.ide.vscode": {
       "version": "1.2.5",
       "depth": 1,
+      "source": "registry",
+      "dependencies": {},
+      "url": "https://packages.unity.cn"
+    },
+    "com.unity.mathematics": {
+      "version": "1.2.6",
+      "depth": 0,
       "source": "registry",
       "dependencies": {},
       "url": "https://packages.unity.cn"

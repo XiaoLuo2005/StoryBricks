@@ -12,7 +12,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f9a, type: 3}
   m_Name: RabbitTutorialConfig
   m_EditorClassIdentifier: 
-  title: "\u5154\u5B50\u62FC\u88C5\u6559\u7A0B"
+  title: "兔子拼装教程"
   portfolioSceneName: BrickLibrary
   steps:
   - {fileID: 21300000, guid: 324e10ed1176df5459019dd12e6eb5c8, type: 3}
@@ -22,4 +22,10 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 743a21b1007045547b7ddb68f3bd5c83, type: 3}
   - {fileID: 21300000, guid: eb1a0c82a07e1db428e7235dafeecc44, type: 3}
   - {fileID: 21300000, guid: fd1c673e297aadf45bf6ce8342376c9a, type: 3}
+  stepHints: []
+  stepTutorDetails: []
+  tutorialTutorOverviewText: {fileID: 4900000, guid: d4e5f6789012345678901234abcd5678, type: 3}
+  stepHintsSourceText: {fileID: 4900000, guid: e1111111222222223333333344444444, type: 3}
+  stepTutorDetailsSourceText: {fileID: 4900000, guid: f2222222333333334444444455555555, type: 3}
   previewModelPrefab: {fileID: 4143649737527873925, guid: e31665af261f6594ea37a7cc90d18d49, type: 3}
+  mascotLottieJsonText: {fileID: 0}

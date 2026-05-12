@@ -1,0 +1,20 @@
+{
+  "name": "storybricks-tutor-gateway",
+  "version": "1.0.0",
+  "private": true,
+  "description": "StoryBricks AI tutor gateway — DashScope only (Node http + busboy)",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "generate-tutor-texts": "node tools/generate-tutorial-tutor-texts.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "busboy": "^1.6.0"
+  },
+  "optionalDependencies": {
+    "sharp": "^0.33.5"
+  }
+}
