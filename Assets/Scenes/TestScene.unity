@@ -308,7 +308,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   displayImage: {fileID: 191430472}
   imageGenClient: {fileID: 1448845936}
-  preferredCameraName: HP True Vision FHD Camera
+  preferredCameraName: e2eSoft iVCam
 --- !u!1 &705507993
 GameObject:
   m_ObjectHideFlags: 0
@@ -632,7 +632,7 @@ MonoBehaviour:
   model: wanx-v1
   prompt: A cute cartoon rabbit reading a storybook in a cozy room.
   markerPromptMappings:
-  - markerId: 2
+  - markerId: 0
     prompt: A cute pig reading a storybook in a cozy room.
   - markerId: 4
     prompt: The rabbit is eating carrot

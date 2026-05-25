@@ -11,7 +11,7 @@ using UnityEngine.SceneManagement;
 public class TutorialShell : MonoBehaviour
 {
     [Tooltip("Build Settings 中的积木库场景名")]
-    public string portfolioSceneName = "BrickLibrary";
+    public string portfolioSceneName = "StorySummary";
 
     public string tutorialTitle = "教程";
 

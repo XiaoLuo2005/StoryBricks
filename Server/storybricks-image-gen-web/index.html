@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>StoryBricks 生图调试（与 Unity LocalImageGenClient 同接口）</title>
+  <style>
+    :root { font-family: "Segoe UI", system-ui, sans-serif; background: #1a1d23; color: #e8eaef; }
+    body { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+    h1 { font-size: 1.25rem; font-weight: 600; }
+    label { display: block; margin-top: 14px; font-size: 0.85rem; color: #9aa3b2; }
+    input, textarea, select, button { width: 100%; box-sizing: border-box; margin-top: 6px; }
+    input, textarea, select {
+      padding: 10px 12px; border-radius: 8px; border: 1px solid #3d4450;
+      background: #252a33; color: #e8eaef;
+    }
+    textarea { min-height: 100px; resize: vertical; }
+    button {
+      margin-top: 18px; padding: 12px; border: none; border-radius: 8px;
+      background: #3b82f6; color: #fff; font-weight: 600; cursor: pointer;
+    }
+    button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    @media (max-width: 640px) { .row { grid-template-columns: 1fr; } }
+    .hint { font-size: 0.8rem; color: #7d8694; margin-top: 8px; line-height: 1.5; }
+    .out { margin-top: 20px; padding: 14px; border-radius: 8px; background: #252a33; border: 1px solid #3d4450; }
+    pre { white-space: pre-wrap; word-break: break-all; font-size: 0.8rem; color: #b8c0cc; }
+    img { max-width: 100%; border-radius: 8px; margin-top: 12px; }
+    a { color: #60a5fa; }
+    .err { color: #f87171; }
+  </style>
+</head>
+<body>
+  <h1>StoryBricks 生图调试</h1>
+  <p class="hint">
+    <strong>不要</strong>在地址栏打开以 <code>/generate</code> 结尾的链接（那是 API，只接受 POST，浏览器会直接报 Method Not Allowed）。
+    请只打开首页：<code>http://127.0.0.1:8765/</code>，在本页点「生成」。
+  </p>
+  <p class="hint">
+    与 Unity <code>LocalImageGenClient</code> 相同：POST JSON 到 <code>/generate</code>，字段
+    <code>prompt</code>、<code>model</code>、<code>size</code>（默认 <code>1024*1024</code>）、<code>n</code>。
+    请通过下方「本页访问地址」打开（不要直接双击 file://），否则浏览器会拦截跨域。
+  </p>
+
+  <label>本页访问地址（由本地代理提供时填这里，一般不用改）</label>
+  <input type="text" id="pageBase" value="" placeholder="留空则使用当前页面 origin" />
+
+  <label>实际上游生图地址（仅在不走代理、且服务端已开 CORS 时使用）</label>
+  <input type="text" id="upstream" value="http://39.97.174.49:8800/generate" />
+
+  <label>模型 model</label>
+  <input type="text" id="model" value="wanx-v1" />
+
+  <label>尺寸 size（与 Unity 一致）</label>
+  <input type="text" id="size" value="1024*1024" />
+
+  <div class="row">
+    <div>
+      <label>n</label>
+      <input type="number" id="n" value="1" min="1" max="4" />
+    </div>
+  </div>
+
+  <label>提示词 prompt</label>
+  <textarea id="prompt" placeholder="输入英文或中文提示词…">A cute cartoon rabbit reading a storybook in a cozy room.</textarea>
+
+  <button type="button" id="go">生成</button>
+
+  <div class="out" id="out" hidden>
+    <div id="status"></div>
+    <pre id="raw"></pre>
+    <img id="preview" alt="生成结果" hidden />
+  </div>
+
+  <script>
+    (function () {
+      var pageBase = document.getElementById("pageBase");
+      var upstream = document.getElementById("upstream");
+      var go = document.getElementById("go");
+      var out = document.getElementById("out");
+      var statusEl = document.getElementById("status");
+      var raw = document.getElementById("raw");
+      var preview = document.getElementById("preview");
+
+      if (!pageBase.value) pageBase.value = location.origin;
+
+      function buildUrl() {
+        var base = (pageBase.value || "").trim().replace(/\/$/, "");
+        if (base) return base + "/generate";
+        return (upstream.value || "").trim();
+      }
+
+      go.addEventListener("click", async function () {
+        var url = buildUrl();
+        if (!url) {
+          alert("请填写本页访问地址或上游地址");
+          return;
+        }
+        var body = {
+          prompt: document.getElementById("prompt").value.trim(),
+          model: document.getElementById("model").value.trim() || "wanx-v1",
+          size: document.getElementById("size").value.trim() || "1024*1024",
+          n: parseInt(document.getElementById("n").value, 10) || 1,
+        };
+        if (!body.prompt) {
+          alert("请填写 prompt");
+          return;
+        }
+
+        out.hidden = false;
+        statusEl.textContent = "请求中…";
+        statusEl.className = "";
+        raw.textContent = "";
+        preview.hidden = true;
+        go.disabled = true;
+
+        try {
+          var res = await fetch(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
+          });
+          var text = await res.text();
+          raw.textContent = text;
+          if (!res.ok) {
+            statusEl.textContent = "HTTP " + res.status;
+            statusEl.className = "err";
+            return;
+          }
+          var data;
+          try {
+            data = JSON.parse(text);
+          } catch (e) {
+            statusEl.textContent = "响应不是合法 JSON";
+            statusEl.className = "err";
+            return;
+          }
+          if (data.error) {
+            statusEl.textContent = "错误: " + data.error;
+            statusEl.className = "err";
+            return;
+          }
+          if (!data.image_url) {
+            statusEl.textContent = "未返回 image_url";
+            statusEl.className = "err";
+            return;
+          }
+          statusEl.innerHTML = "成功。图片地址：<a href=\"" + data.image_url + "\" target=\"_blank\" rel=\"noopener\">" + data.image_url + "</a>";
+          preview.src = data.image_url;
+          preview.hidden = false;
+        } catch (e) {
+          statusEl.textContent = "请求失败（多为跨域 CORS）：请用本目录下的 node 代理启动后再打开本页。 " + (e && e.message ? e.message : e);
+          statusEl.className = "err";
+        } finally {
+          go.disabled = false;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
