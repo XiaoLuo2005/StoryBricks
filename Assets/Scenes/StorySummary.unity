@@ -546,7 +546,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8f4e2a1b3c5d6e7f8091a2b3c4d5e6f7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  headerTitleText: {fileID: 0}
+  headerTitleTextTmp: {fileID: 0}
   cardListContent: {fileID: 380432711}
   cardPrefab: {fileID: 2189903588304142949, guid: 81c66ec3003659c409c4a31f632cd80d, type: 3}
   works: []

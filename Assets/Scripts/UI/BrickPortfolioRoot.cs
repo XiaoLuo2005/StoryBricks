@@ -2,6 +2,7 @@ using System;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
+using TMPro;
 
 /// <summary>
 /// 故事库（StorySummary）：在场景里摆 ScrollView + Content，本脚本按故事列表实例化 StoryCard Prefab。
@@ -23,7 +24,7 @@ public class BrickPortfolioRoot : MonoBehaviour
     }
 
     [Header("场景里摆好的 UI")]
-    public Text headerTitleText;
+    public TextMeshProUGUI headerTitleTextTmp;
     public RectTransform cardListContent;
     public StoryCardView cardPrefab;
 
@@ -43,8 +44,8 @@ public class BrickPortfolioRoot : MonoBehaviour
 
     void Start()
     {
-        if (headerTitleText != null && !string.IsNullOrEmpty(headerTitle))
-            headerTitleText.text = headerTitle;
+        if (headerTitleTextTmp != null && !string.IsNullOrEmpty(headerTitle))
+            headerTitleTextTmp.text = headerTitle;
 
         if (cardListContent == null || cardPrefab == null)
         {

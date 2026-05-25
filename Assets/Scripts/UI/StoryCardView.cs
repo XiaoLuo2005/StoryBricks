@@ -6,8 +6,6 @@ using TMPro;
 public class StoryCardView : MonoBehaviour
 {
     public Image coverImage;
-    [Tooltip("Legacy UI Text，与 Title Text Tmp 二选一")]
-    public Text titleText;
     public TextMeshProUGUI titleTextTmp;
     public Button chooseButton;
     public Button cardButton;
@@ -16,8 +14,6 @@ public class StoryCardView : MonoBehaviour
     public void Bind(BrickPortfolioRoot.BrickWorkItem item, System.Action onChoose)
     {
         string title = item?.title ?? "";
-        if (titleText != null)
-            titleText.text = title;
         if (titleTextTmp != null)
             titleTextTmp.text = title;
 

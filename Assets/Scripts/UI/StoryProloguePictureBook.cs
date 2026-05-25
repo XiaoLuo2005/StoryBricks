@@ -8,9 +8,7 @@ public class StoryProloguePictureBook : MonoBehaviour
 {
     public string fallbackLibrarySceneName = StoryFlowScenes.StoryLibrary;
     public Image pageImage;
-    public Text pageCaptionText;
     public TextMeshProUGUI pageCaptionTextTmp;
-    public Text pageIndicatorText;
     public TextMeshProUGUI pageIndicatorTextTmp;
     public Button prevPageButton;
     public Button nextPageButton;
@@ -70,8 +68,6 @@ public class StoryProloguePictureBook : MonoBehaviour
         }
 
         string indicator = $"{index + 1} / {_pages.Length}";
-        if (pageIndicatorText != null)
-            pageIndicatorText.text = indicator;
         if (pageIndicatorTextTmp != null)
             pageIndicatorTextTmp.text = indicator;
 

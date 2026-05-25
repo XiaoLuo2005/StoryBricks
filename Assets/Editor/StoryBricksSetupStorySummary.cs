@@ -134,7 +134,7 @@ public static class StoryBricksSetupStorySummary
         var lib = new GameObject("StoryLibrary");
         var portfolio = lib.AddComponent<BrickPortfolioRoot>();
         var catalog = lib.AddComponent<StoryCatalog>();
-        portfolio.headerTitleText = null;
+        portfolio.headerTitleTextTmp = headerTmp;
         portfolio.cardListContent = contentRt;
         portfolio.headerTitle = "故事库";
         var prefabGo = AssetDatabase.LoadAssetAtPath<GameObject>(CardPrefabPath);

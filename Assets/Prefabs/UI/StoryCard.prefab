@@ -556,7 +556,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   coverImage: {fileID: 4896197790389267245}
-  titleText: {fileID: 0}
   titleTextTmp: {fileID: 1972328137211755938}
   chooseButton: {fileID: 1355742231788603753}
   cardButton: {fileID: 0}
