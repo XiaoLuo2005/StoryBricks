@@ -5,11 +5,19 @@ using UnityEngine.SceneManagement;
 using TMPro;
 
 /// <summary>
-/// 故事库（StorySummary）：在场景里摆 ScrollView + Content，本脚本按故事列表实例化 StoryCard Prefab。
+/// 故事库（StorySummary）或积木库（BrickLibrary）：按列表实例化 StoryCard Prefab。
 /// </summary>
 [DisallowMultipleComponent]
 public class BrickPortfolioRoot : MonoBehaviour
 {
+    public enum PortfolioKind
+    {
+        /// <summary>使用 StoryCatalog / Resources 故事资产，选卡后先进入绘本再进搭建。</summary>
+        StoryLibrary = 0,
+        /// <summary>仅使用下方「作品列表」，选卡后直接进入教程场景。</summary>
+        BrickWorks = 1,
+    }
+
     [Serializable]
     public class BrickWorkItem
     {
@@ -23,15 +31,18 @@ public class BrickPortfolioRoot : MonoBehaviour
         public Sprite thumbnail;
     }
 
+    [Header("模式")]
+    public PortfolioKind portfolioKind = PortfolioKind.StoryLibrary;
+
     [Header("场景里摆好的 UI")]
     public TextMeshProUGUI headerTitleTextTmp;
     public RectTransform cardListContent;
     public StoryCardView cardPrefab;
 
-    [Header("故事数据（可选，Story Catalog 优先）")]
+    [Header("作品列表")]
     public BrickWorkItem[] works;
 
-    [Header("场景跳转")]
+    [Header("场景跳转（故事库）")]
     public string defaultPrologueSceneName = StoryFlowScenes.StoryPrologue;
     public string headerTitle = "故事库";
 
@@ -39,7 +50,8 @@ public class BrickPortfolioRoot : MonoBehaviour
 
     void Awake()
     {
-        _catalog = GetComponent<StoryCatalog>();
+        if (portfolioKind == PortfolioKind.StoryLibrary)
+            _catalog = GetComponent<StoryCatalog>();
     }
 
     void Start()
@@ -63,7 +75,7 @@ public class BrickPortfolioRoot : MonoBehaviour
                 continue;
             var card = Instantiate(cardPrefab, cardListContent);
             card.gameObject.SetActive(true);
-            card.Bind(item, () => OnStoryChosen(item));
+            card.Bind(item, () => OnCardChosen(item));
         }
 
         ResizeScrollContent(items.Length);
@@ -71,6 +83,9 @@ public class BrickPortfolioRoot : MonoBehaviour
 
     BrickWorkItem[] ResolveWorks()
     {
+        if (portfolioKind == PortfolioKind.BrickWorks)
+            return works != null && works.Length > 0 ? works : Array.Empty<BrickWorkItem>();
+
         if (works != null && works.Length > 0)
             return works;
 
@@ -98,21 +113,34 @@ public class BrickPortfolioRoot : MonoBehaviour
         return Array.Empty<BrickWorkItem>();
     }
 
-    void OnStoryChosen(BrickWorkItem item)
+    void OnCardChosen(BrickWorkItem item)
     {
-        string buildScene = item.tutorialSceneName;
-        string prologueScene = string.IsNullOrWhiteSpace(item.prologueSceneName)
-            ? defaultPrologueSceneName
-            : item.prologueSceneName.Trim();
-
-        if (string.IsNullOrWhiteSpace(buildScene))
+        if (string.IsNullOrWhiteSpace(item.tutorialSceneName))
         {
             Debug.LogWarning($"BrickPortfolio: 「{item.title}」未填写 tutorialSceneName。");
             return;
         }
 
+        string buildScene = item.tutorialSceneName.Trim();
+
+        if (portfolioKind == PortfolioKind.BrickWorks)
+        {
+            SceneManager.LoadScene(buildScene);
+            return;
+        }
+
+        string prologueScene = string.IsNullOrWhiteSpace(item.prologueSceneName)
+            ? defaultPrologueSceneName
+            : item.prologueSceneName.Trim();
+
         string sid = string.IsNullOrWhiteSpace(item.storyId) ? item.title : item.storyId;
-        StorySelectionContext.Set(sid, item.title, item.synopsisText ?? "", buildScene.Trim(), item.thumbnail, item.prologuePages);
+        StorySelectionContext.Set(
+            sid,
+            item.title,
+            item.synopsisText ?? "",
+            buildScene,
+            item.thumbnail,
+            item.prologuePages);
         SceneManager.LoadScene(prologueScene);
     }
 

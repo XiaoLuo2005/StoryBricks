@@ -14,13 +14,15 @@ public static class StoryBricksSetupStorySummary
     [MenuItem("StoryBricks/搭建 StorySummary 多故事库")]
     public static void Setup()
     {
-        EnsureCardPrefab();
+        EnsureCardPrefabPublic();
         SetupScene();
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
             "已搭建 StorySummary：\n• StoryCard.prefab（含 StoryCardView，支持 TMP）\n• ScrollView + StoryLibrary\n\n请在 StoryCatalog 的 Stories 里拖入故事资产。",
             "好的");
     }
+
+    public static void EnsureCardPrefabPublic() => EnsureCardPrefab();
 
     static void EnsureCardPrefab()
     {

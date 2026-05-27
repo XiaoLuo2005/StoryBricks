@@ -48,7 +48,7 @@ public static class RabbitTutorialConfigMenu
         }
 
         cfg.title = "兔子拼装教程";
-        cfg.portfolioSceneName = "StorySummary";
+        cfg.portfolioSceneName = StoryFlowScenes.BrickLibrary;
         cfg.steps = sprites;
         EditorUtility.SetDirty(cfg);
         AssetDatabase.SaveAssets();

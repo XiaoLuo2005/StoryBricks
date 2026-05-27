@@ -35,6 +35,6 @@
 
 ## 注意
 
-- **不要**用 `BrickLibrary` 场景；故事集合只在 **StorySummary**。
+- 积木作品集用 **BrickLibrary** 场景（见 `DEMO_积木作品集_BrickLibrary.md`）；故事集合在 **StorySummary**。
 - 场景里若还留着以前手摆的一张 **StoryCard**，会和自动生成的卡重复；搭建菜单会删掉旧卡，以 Prefab 生成为准。
 - 第一条示例故事：**Story_TortoiseHare**（龟兔赛跑）。

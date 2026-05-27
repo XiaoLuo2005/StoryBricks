@@ -3,9 +3,16 @@ using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using TMPro;
 
+[DefaultExecutionOrder(-10)]
 [DisallowMultipleComponent]
 public class StoryProloguePictureBook : MonoBehaviour
 {
+    const float EdgePadding = 64f;
+    const float BottomInset = 56f;
+    const float ButtonSpacing = 36f;
+    static readonly Vector2 NavButtonSize = new Vector2(200f, 200f);
+    static readonly Vector2 StartButtonSize = new Vector2(240f, 200f);
+
     public string fallbackLibrarySceneName = StoryFlowScenes.StoryLibrary;
     public Image pageImage;
     public TextMeshProUGUI pageCaptionTextTmp;
@@ -16,6 +23,107 @@ public class StoryProloguePictureBook : MonoBehaviour
 
     Sprite[] _pages;
     int _index;
+
+    void Awake()
+    {
+        ApplyResponsiveLayout();
+    }
+
+    void ApplyResponsiveLayout()
+    {
+        var canvas = GetComponentInParent<Canvas>() ?? FindObjectOfType<Canvas>();
+        if (canvas != null)
+        {
+            var scaler = canvas.GetComponent<CanvasScaler>() ??
+                         canvas.gameObject.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
+        }
+
+        if (pageImage != null)
+        {
+            StretchFull(pageImage.rectTransform);
+            pageImage.preserveAspect = false;
+            pageImage.type = Image.Type.Simple;
+            pageImage.raycastTarget = false;
+        }
+
+        LayoutBottomButton(prevPageButton, EdgePadding, false, NavButtonSize, 30);
+        LayoutBottomButton(
+            nextPageButton,
+            EdgePadding + NavButtonSize.x + ButtonSpacing,
+            false,
+            NavButtonSize,
+            30);
+        LayoutBottomButton(startBuildButton, EdgePadding, true, StartButtonSize, 28);
+
+        if (pageIndicatorTextTmp != null)
+        {
+            var rt = pageIndicatorTextTmp.rectTransform;
+            rt.anchorMin = new Vector2(1f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(1f, 0f);
+            rt.sizeDelta = new Vector2(280f, 72f);
+            rt.anchoredPosition = new Vector2(
+                -(EdgePadding + StartButtonSize.x + ButtonSpacing),
+                BottomInset + (NavButtonSize.y - 72f) * 0.5f);
+            pageIndicatorTextTmp.fontSize = 42;
+            pageIndicatorTextTmp.fontStyle = FontStyles.Bold;
+            pageIndicatorTextTmp.color = Color.white;
+            pageIndicatorTextTmp.outlineWidth = 0.25f;
+            pageIndicatorTextTmp.outlineColor = new Color32(40, 40, 40, 200);
+            pageIndicatorTextTmp.alignment = TextAlignmentOptions.MidlineRight;
+        }
+
+        BringControlsToFront();
+    }
+
+    static void StretchFull(RectTransform rt)
+    {
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.pivot = new Vector2(0.5f, 0.5f);
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+    }
+
+    static void LayoutBottomButton(
+        Button button,
+        float inset,
+        bool alignRight,
+        Vector2 size,
+        float labelFontSize)
+    {
+        if (button == null)
+            return;
+
+        var rt = button.GetComponent<RectTransform>();
+        var xAnchor = alignRight ? 1f : 0f;
+        rt.anchorMin = new Vector2(xAnchor, 0f);
+        rt.anchorMax = new Vector2(xAnchor, 0f);
+        rt.pivot = new Vector2(xAnchor, 0f);
+        rt.sizeDelta = size;
+        rt.anchoredPosition = new Vector2(alignRight ? -inset : inset, BottomInset);
+
+        foreach (var label in button.GetComponentsInChildren<TextMeshProUGUI>(true))
+        {
+            label.fontSize = labelFontSize;
+            label.enableAutoSizing = false;
+        }
+    }
+
+    void BringControlsToFront()
+    {
+        if (pageIndicatorTextTmp != null)
+            pageIndicatorTextTmp.transform.SetAsLastSibling();
+        if (startBuildButton != null)
+            startBuildButton.transform.SetAsLastSibling();
+        if (nextPageButton != null)
+            nextPageButton.transform.SetAsLastSibling();
+        if (prevPageButton != null)
+            prevPageButton.transform.SetAsLastSibling();
+    }
 
     void Start()
     {
@@ -64,7 +172,7 @@ public class StoryProloguePictureBook : MonoBehaviour
         if (pageImage != null && index >= 0 && index < _pages.Length)
         {
             pageImage.sprite = _pages[index];
-            pageImage.preserveAspect = true;
+            pageImage.preserveAspect = false;
         }
 
         string indicator = $"{index + 1} / {_pages.Length}";
