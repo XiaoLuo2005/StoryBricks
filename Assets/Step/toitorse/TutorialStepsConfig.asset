@@ -1,0 +1,38 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f9a, type: 3}
+  m_Name: TutorialStepsConfig
+  m_EditorClassIdentifier: 
+  title: "\u4E4C\u9F9F\u62FC\u88C5\u6559\u7A0B"
+  portfolioSceneName: BrickLibrary
+  steps:
+  - {fileID: 21300000, guid: ecab6ec275ab78a42ac35c46056d4210, type: 3}
+  - {fileID: 21300000, guid: d16c2fd7838fd9844977eef4ebf55d9c, type: 3}
+  - {fileID: 21300000, guid: f47ddd4e913fb0a4b90c844b1efdbda0, type: 3}
+  - {fileID: 21300000, guid: 01364c5df02f75d469fa31d8c959be69, type: 3}
+  - {fileID: 21300000, guid: 4b85ab5dade7ad542b2fe8418bbbd1a2, type: 3}
+  - {fileID: 21300000, guid: 730f2f75f91f5014e83b1702348aa47e, type: 3}
+  - {fileID: 21300000, guid: d4d1a19701eaed643bb56c53eef41e1c, type: 3}
+  - {fileID: 21300000, guid: daa98c7a3c23cfb46b22de03f4582e37, type: 3}
+  - {fileID: 21300000, guid: d052eb5d4ba31f24ba9b8d82eed749f8, type: 3}
+  - {fileID: 21300000, guid: 709178eeb07685d4dac3e354c96b837e, type: 3}
+  - {fileID: 21300000, guid: 7a80f51bebefda04eafb11a55534e94b, type: 3}
+  - {fileID: 21300000, guid: 5d2797a4799d7b042861d7126fe6ea5e, type: 3}
+  - {fileID: 21300000, guid: 2bffd5a135b0ad546a47d6b2abdddd2d, type: 3}
+  - {fileID: 21300000, guid: 8c701b7375fa7424181c6f45c33af56a, type: 3}
+  stepHints: []
+  stepTutorDetails: []
+  tutorialTutorOverviewText: {fileID: 4900000, guid: f9c73f0993e7ec84da3ed7f1876cc673, type: 3}
+  stepHintsSourceText: {fileID: 4900000, guid: a17082f481796b745af8239d75b67ab4, type: 3}
+  stepTutorDetailsSourceText: {fileID: 4900000, guid: 9283f07b8fe4bb341bf0f9e8b9073d81, type: 3}
+  previewModelPrefab: {fileID: 3739750891368312835, guid: 1161cb4797f2eaf418a4a07888f74a8b, type: 3}
+  mascotLottieJsonText: {fileID: 0}

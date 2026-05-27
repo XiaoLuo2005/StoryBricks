@@ -619,6 +619,13 @@ MonoBehaviour:
     prologueSceneName: 
     tutorialSceneName: RabbitTutorial
     thumbnail: {fileID: 21300000, guid: 324e10ed1176df5459019dd12e6eb5c8, type: 3}
+  - storyId: toitorse
+    title: "\u4E4C\u9F9F"
+    synopsisText: 
+    prologuePages: []
+    prologueSceneName: 
+    tutorialSceneName: ToitorseTutorial
+    thumbnail: {fileID: 21300000, guid: ecab6ec275ab78a42ac35c46056d4210, type: 3}
   defaultPrologueSceneName: StoryPrologue
   headerTitle: "\u79EF\u6728\u5E93"
 --- !u!4 &1186194107
