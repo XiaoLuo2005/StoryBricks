@@ -1,5 +1,6 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.Text;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -40,18 +41,36 @@ public class LocalImageGenClient : MonoBehaviour
     /// <summary>
     /// 根据 ArUco 标记 ID 查找配置的提示词并生图；未配置则跳过。
     /// </summary>
-    public void GenerateImageForMarker(int markerId)
+    public void GenerateImageForMarker(List<int> markerIds)
     {
-        string resolved = ResolvePromptForMarker(markerId);
-        if (string.IsNullOrEmpty(resolved))
-        {
-            Debug.LogWarning($"LocalImageGenClient: 未在 markerPromptMappings 中为 ID {markerId} 配置提示词，已跳过生图。");
-            return;
-        }
+        if (markerIds == null || markerIds.Count == 0) return;
 
-        StopAllCoroutines();
-        CancelActiveWebRequest();
-        StartCoroutine(GenerateImageCoroutine(resolved));
+        List<string> validPrompts = new List<string>();
+
+        // 在客户端内部统一解析 ID 并收集提示词
+        foreach (int id in markerIds)
+        {
+            string resolved = ResolvePromptForMarker(id);
+            if (!string.IsNullOrEmpty(resolved))
+            {
+                validPrompts.Add(resolved);
+            }
+        }
+        if (validPrompts.Count > 0)
+        {
+            // 拼接提示词
+            string combinedPrompt = string.Join(", ", validPrompts);
+            Debug.Log($"[Client] 组合提示词生图: \"{combinedPrompt}\"");
+
+            // 启动生图
+            StopAllCoroutines();
+            CancelActiveWebRequest();
+            StartCoroutine(GenerateImageCoroutine(combinedPrompt));
+        }
+        else
+        {
+            Debug.LogWarning("[Client] 传入的所有 ID 均未配置有效的提示词，已跳过生图。");
+        }
     }
 
     void OnDisable()

@@ -11,6 +11,9 @@ public class ArUcoDetector : MonoBehaviour
     public RawImage displayImage;
     public LocalImageGenClient imageGenClient;
 
+    [Tooltip("用于触发生成图片的按钮")]
+    public Button generateButton;
+
     [Header("摄像头设置")]
     public string preferredCameraName = "HP True Vision FHD Camera";
 
@@ -18,20 +21,30 @@ public class ArUcoDetector : MonoBehaviour
     private const int RequestedWidth = 1920;
     private const int RequestedHeight = 1080;
     private const int RequestedFps = 30;
-    private const bool ReportEachIdOnlyOnce = true;
 
     private WebCamTexture webCamTexture;
     private Mat rgbaMat;
     private Dictionary dictionary;
     private DetectorParameters detectorParams;
     private ArucoDetector arucoDetector;
-    private readonly HashSet<int> reportedIds = new HashSet<int>();
 
     // 用于转换 Mat 到 Texture
     private Texture2D outputTexture;
 
+    private List<int> pendingMarkerIds = new List<int>();
+
     void Start()
     {
+        if (generateButton != null)
+        {
+            generateButton.gameObject.SetActive(false); // 默认隐藏
+            generateButton.onClick.AddListener(OnGenerateButtonClick); // 绑定点击事件
+        }
+        else
+        {
+            Debug.LogError("ArUcoDetector: 未在 Inspector 中绑定 generateButton！");
+        }
+
         // 1. 初始化摄像头
         WebCamDevice[] devices = WebCamTexture.devices;
         for (int i = 0; i < devices.Length; i++)
@@ -94,22 +107,36 @@ public class ArUcoDetector : MonoBehaviour
                     // 5. 提取识别到的 ID
                     int[] idArray = new int[ids.total()];
                     ids.get(0, 0, idArray);
+                    // 收集当前帧看到的所有不重复 ID
+                    List<int> visibleIdsThisFrame = new List<int>();
+                    HashSet<int> seen = new HashSet<int>();
 
                     foreach (int id in idArray)
                     {
-                        if (!ReportEachIdOnlyOnce || reportedIds.Add(id))
+                        if (seen.Add(id))
                         {
-                            Debug.Log($"<color=green>识别到 ArUco 码 ID:{id} (字典: DICT_4X4_50)</color>");
-
-                            if (imageGenClient != null)
-                            {
-                                imageGenClient.GenerateImageForMarker(id);
-                            }
-                            else
-                            {
-                                Debug.LogWarning($"检测到 ArUco ID:{id}，但未绑定 imageGenClient。");
-                            }
+                            visibleIdsThisFrame.Add(id);
                         }
+                    }
+
+                    if (visibleIdsThisFrame.Count > 0)
+                    {
+                        // 直接存下这组 ID
+                        pendingMarkerIds = visibleIdsThisFrame;
+
+                        // 显示按钮
+                        if (generateButton != null && !generateButton.gameObject.activeSelf)
+                        {
+                            generateButton.gameObject.SetActive(true);
+                        }
+                    }
+                }
+                else
+                {
+                    pendingMarkerIds.Clear();
+                    if (generateButton != null && generateButton.gameObject.activeSelf)
+                    {
+                        generateButton.gameObject.SetActive(false);
                     }
                 }
             }
@@ -124,8 +151,29 @@ public class ArUcoDetector : MonoBehaviour
         }
     }
 
+    private void OnGenerateButtonClick()
+    {
+        // 点击按钮时，直接把 ID 列表塞给生图客户端
+        if (imageGenClient != null && pendingMarkerIds.Count > 0)
+        {
+            imageGenClient.GenerateImageForMarker(pendingMarkerIds);
+        }
+
+        // 复位
+        pendingMarkerIds.Clear();
+        if (generateButton != null)
+        {
+            generateButton.gameObject.SetActive(false);
+        }
+    }
+
     void OnDestroy()
     {
+        if (generateButton != null)
+        {
+            generateButton.onClick.RemoveListener(OnGenerateButtonClick);
+        }
+
         if (webCamTexture != null)
         {
             webCamTexture.Stop();
@@ -162,7 +210,5 @@ public class ArUcoDetector : MonoBehaviour
             Destroy(outputTexture);
             outputTexture = null;
         }
-
-        reportedIds.Clear();
     }
 }
