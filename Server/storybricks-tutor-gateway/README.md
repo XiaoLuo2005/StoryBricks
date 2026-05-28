@@ -50,7 +50,7 @@ cd Server/storybricks-tutor-gateway
 # 若曾安装过旧版 express，建议删掉 node_modules 再装
 # rm -r node_modules
 npm install
-set DASHSCOPE_API_KEY=sk-b981173cf88d49b7825724b006a1eb08
+set DASHSCOPE_API_KEY=sk-你的灵积Key
 npm start
 ```
 
