@@ -28,7 +28,7 @@ public class LocalImageGenClient : MonoBehaviour
     public string serverUrl = "http://39.97.174.49:8800/generate";
 
     [Header("Generation")]
-    public string model = "wanx-v1";
+    public string model = "wan2.6-image";
 
     [HideInInspector]
     [SerializeField]

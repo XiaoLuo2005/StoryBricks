@@ -886,7 +886,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   targetImage: {fileID: 1817568418}
   serverUrl: http://39.97.174.49:8800/generate
-  model: wanx-v1
+  model: wan2.7-image-pro
   prompt: A cute cartoon rabbit reading a storybook in a cozy room.
   markerPromptMappings:
   - markerId: 0
@@ -948,7 +948,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: -446, y: 4}
+  m_AnchoredPosition: {x: -419, y: 4}
   m_SizeDelta: {x: 1024, y: 1024}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!114 &1817568418
