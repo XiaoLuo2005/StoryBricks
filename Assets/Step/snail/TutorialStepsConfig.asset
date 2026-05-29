@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: a1b2c3d4e5f60718293a4b5c6d7e8f9a, type: 3}
+  m_Name: TutorialStepsConfig
+  m_EditorClassIdentifier: 
+  title: "\u8717\u725B\u62FC\u88C5\u6559\u7A0B"
+  portfolioSceneName: BrickLibrary
+  steps:
+  - {fileID: 21300000, guid: 57d58afe9c4c9274c91cb054add9f321, type: 3}
+  - {fileID: 21300000, guid: 786a1256e0da4e34eb7989698796da0c, type: 3}
+  - {fileID: 21300000, guid: 154c74c47600b694f9dcf2edcf3d7515, type: 3}
+  - {fileID: 21300000, guid: 15b967453839527488497669fbdfb958, type: 3}
+  - {fileID: 21300000, guid: a7e13bf2e45f8744e9eaf72a8b07d061, type: 3}
+  stepHints: []
+  stepTutorDetails: []
+  tutorialTutorOverviewText: {fileID: 0}
+  stepHintsSourceText: {fileID: 0}
+  stepTutorDetailsSourceText: {fileID: 0}
+  previewModelPrefab: {fileID: 2821999230468720683, guid: bea2b650388afc64087fa88cbf392575, type: 3}
+  mascotLottieJsonText: {fileID: 0}

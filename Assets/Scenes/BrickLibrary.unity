@@ -626,6 +626,20 @@ MonoBehaviour:
     prologueSceneName: 
     tutorialSceneName: ToitorseTutorial
     thumbnail: {fileID: 21300000, guid: ecab6ec275ab78a42ac35c46056d4210, type: 3}
+  - storyId: snail
+    title: "\u8717\u725B"
+    synopsisText: 
+    prologuePages: []
+    prologueSceneName: 
+    tutorialSceneName: SnailTutorial
+    thumbnail: {fileID: 21300000, guid: 57d58afe9c4c9274c91cb054add9f321, type: 3}
+  - storyId: dog
+    title: "\u72D7"
+    synopsisText: 
+    prologuePages: []
+    prologueSceneName: 
+    tutorialSceneName: DogTutorial
+    thumbnail: {fileID: 21300000, guid: f720a1dc88ef96545ad49b03f624a790, type: 3}
   defaultPrologueSceneName: StoryPrologue
   headerTitle: "\u79EF\u6728\u5E93"
 --- !u!4 &1186194107

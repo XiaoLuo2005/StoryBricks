@@ -26,4 +26,10 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/ToitorseTutorial.unity
     guid: 2cf6665899618824a83b1c3e571dfd9f
+  - enabled: 1
+    path: Assets/Scenes/SnailTutorial.unity
+    guid: 398604bfde8d3b74d847ecfa490ba2a2
+  - enabled: 1
+    path: Assets/Scenes/DogTutorial.unity
+    guid: 85b1aa6ae29f12647af8ef378884cf3e
   m_configObjects: {}
