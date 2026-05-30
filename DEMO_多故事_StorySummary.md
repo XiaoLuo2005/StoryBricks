@@ -2,13 +2,14 @@
 
 ## 流程
 
-`StartScene` → `StorySummary`（多张 StoryCard）→ 点「选择」→ `StoryPrologue`（绘本）→ `RabbitTutorial`
+`StartScene` → `StorySummary`（多张 StoryCard）→ 点「选择」→ `StoryPrologue`（绘本）→ `StoryWorks`（本故事关联的积木作品，如龟兔赛跑仅兔子+乌龟）→ 教程场景
 
 ## 一次性搭建（Unity 菜单）
 
 1. 等脚本编译完。
 2. **StoryBricks → 搭建 StorySummary 多故事库**
-3. 会生成：ScrollView、StoryLibrary、StoryCard.prefab（含 **Story Card View**，支持 **TMP**）。
+3. **StoryBricks → 搭建 StoryWorks 故事作品集**
+4. 会生成：ScrollView、StoryLibrary、StoryCard.prefab（含 **Story Card View**，支持 **TMP**）。
 
 ## 加一条故事（以后重复做）
 
@@ -18,7 +19,8 @@
    - **Title**：列表上显示的名字
    - **Thumbnail**：故事库卡片封面（Sprite）
    - **Prologue Pages**：绘本前情页图（按顺序，可多张）
-   - **Build Scene Name**：搭建场景名（须在 Build Settings）
+   - **Works**：本故事包含的积木作品（标题、教程场景名、缩略图）
+   - **Story Works Scene Name**：留空则用 `StoryWorks`
 3. 打开 **StorySummary** → **StoryLibrary** → **Story Catalog** → **Stories**：
    - **Size +1**，把新资产拖进新格子。
 4. 保存场景。

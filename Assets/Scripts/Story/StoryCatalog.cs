@@ -23,8 +23,7 @@ public class StoryCatalog : MonoBehaviour
             synopsisText = def.synopsisText,
             prologuePages = def.prologuePages,
             prologueSceneName = def.prologueSceneName,
-            tutorialSceneName = def.buildSceneName,
-            thumbnail = def.thumbnail
+            thumbnail = def.thumbnail,
         };
     }
 }

@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 99b5704a44fcff04d8132c96e62d54e1, type: 3}
+  m_Name: Story_TortoiseAndTheHare
+  m_EditorClassIdentifier: 
+  storyId: story_guitu
+  title: "\u9F9F\u5154\u8D5B\u8DD1"
+  synopsisText: 
+  thumbnail: {fileID: 21300000, guid: 2220136f5c2f64a4088d7aa4feefe053, type: 3}
+  prologuePages:
+  - {fileID: 21300000, guid: 846d197023a4d3b459a1493a08cfdc33, type: 3}
+  - {fileID: 21300000, guid: 306a6c9acb4802c40af91160f4d93941, type: 3}
+  prologueSceneName: 
+  storyWorksSceneName: 
+  works:
+  - workId: rabbit
+    title: "\u5154\u5B50"
+    tutorialSceneName: RabbitTutorial
+    thumbnail: {fileID: 21300000, guid: 324e10ed1176df5459019dd12e6eb5c8, type: 3}
+  - workId: toitorse
+    title: "\u4E4C\u9F9F"
+    tutorialSceneName: ToitorseTutorial
+    thumbnail: {fileID: 21300000, guid: ecab6ec275ab78a42ac35c46056d4210, type: 3}

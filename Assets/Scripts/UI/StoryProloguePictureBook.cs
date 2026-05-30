@@ -14,6 +14,8 @@ public class StoryProloguePictureBook : MonoBehaviour
     static readonly Vector2 StartButtonSize = new Vector2(240f, 200f);
 
     public string fallbackLibrarySceneName = StoryFlowScenes.StoryLibrary;
+    public string backSceneName = StoryFlowScenes.StoryLibrary;
+    public bool showBackButton = true;
     public Image pageImage;
     public TextMeshProUGUI pageCaptionTextTmp;
     public TextMeshProUGUI pageIndicatorTextTmp;
@@ -77,6 +79,18 @@ public class StoryProloguePictureBook : MonoBehaviour
         }
 
         BringControlsToFront();
+        TryCreateBackButton();
+    }
+
+    void TryCreateBackButton()
+    {
+        if (!showBackButton || string.IsNullOrWhiteSpace(backSceneName))
+            return;
+
+        var canvas = GetComponentInParent<Canvas>() ?? FindObjectOfType<Canvas>();
+        var btn = StoryFlowBackButtonUi.EnsureTopLeft(canvas, "← 返回故事库", backSceneName);
+        if (btn != null)
+            btn.transform.SetAsLastSibling();
     }
 
     static void StretchFull(RectTransform rt)
@@ -129,6 +143,7 @@ public class StoryProloguePictureBook : MonoBehaviour
     {
         if (!StorySelectionContext.HasSelection)
         {
+            Debug.LogWarning("StoryPrologue: 无故事上下文，返回故事库。");
             SceneManager.LoadScene(fallbackLibrarySceneName.Trim());
             return;
         }
@@ -138,12 +153,18 @@ public class StoryProloguePictureBook : MonoBehaviour
         {
             if (StorySelectionContext.Cover != null)
                 _pages = new[] { StorySelectionContext.Cover };
-            else
-                return;
         }
 
         _index = 0;
         WireButtons();
+
+        if (_pages == null || _pages.Length == 0)
+        {
+            Debug.LogWarning(
+                $"StoryPrologue: 「{StorySelectionContext.Title}」未配置绘本页，但仍可点击开始搭建。");
+            return;
+        }
+
         ShowPage(_index);
     }
 
@@ -163,7 +184,18 @@ public class StoryProloguePictureBook : MonoBehaviour
         {
             startBuildButton.onClick.RemoveAllListeners();
             startBuildButton.onClick.AddListener(() =>
-                SceneManager.LoadScene(StorySelectionContext.BuildSceneName.Trim()));
+            {
+                if (!StorySelectionContext.HasStoryWorks)
+                {
+                    Debug.LogError(
+                        $"StoryPrologue: 故事「{StorySelectionContext.Title}」未配置有效的 Works（关联积木作品 + Tutorial Scene Name），无法进入 StoryWorks。请在 StoryDefinition 资产里填写 Works。");
+                    return;
+                }
+
+                var sceneName = StorySelectionContext.StoryWorksSceneName.Trim();
+                Debug.Log($"StoryPrologue: 进入故事作品集 → {sceneName}");
+                SceneManager.LoadScene(sceneName);
+            });
         }
     }
 

@@ -96,8 +96,8 @@ public class TutorialShell : MonoBehaviour
         backBtn.targetGraphic = backBg;
         backBtn.onClick.AddListener(() =>
         {
-            if (!string.IsNullOrWhiteSpace(portfolioSceneName))
-                SceneManager.LoadScene(portfolioSceneName.Trim());
+            var scene = StorySelectionContext.ResolvePortfolioReturnScene(portfolioSceneName);
+            SceneManager.LoadScene(scene);
         });
 
         var backLabelGo = new GameObject("Label", typeof(RectTransform));
@@ -113,7 +113,7 @@ public class TutorialShell : MonoBehaviour
         backText.fontSize = 28;
         backText.color = textColor;
         backText.alignment = TextAnchor.MiddleCenter;
-        backText.text = "← 返回积木库";
+        backText.text = StorySelectionContext.HasStoryWorks ? "← 返回作品集" : "← 返回积木库";
 
         var titleGo = new GameObject("Title", typeof(RectTransform));
         titleGo.layer = LayerMask.NameToLayer("UI");

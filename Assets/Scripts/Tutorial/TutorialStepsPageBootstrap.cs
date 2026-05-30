@@ -79,11 +79,14 @@ public class TutorialStepsPageBootstrap : MonoBehaviour
         topRt.anchoredPosition = Vector2.zero;
         topBar.color = new Color32(255, 255, 255, 250);
 
-        var backBtn = CreateTopBarBackButton(topRt, "BackButton", "← 返回");
+        var backLabel = StorySelectionContext.HasStoryWorks ? "← 返回作品集" : "← 返回积木库";
+        var backBtn = CreateTopBarBackButton(topRt, "BackButton", backLabel);
         backBtn.onClick.AddListener(() =>
         {
-            if (config != null && !string.IsNullOrWhiteSpace(config.portfolioSceneName))
-                SceneManager.LoadScene(config.portfolioSceneName.Trim());
+            var scene = config != null
+                ? StorySelectionContext.ResolvePortfolioReturnScene(config.portfolioSceneName)
+                : StorySelectionContext.ResolvePortfolioReturnScene(StoryFlowScenes.BrickLibrary);
+            SceneManager.LoadScene(scene);
         });
 
         var titleGo = CreateUiLabel(topRt, "Title", config.title, 36, TextAnchor.MiddleCenter);
