@@ -21,13 +21,16 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         StoryFinished,
     }
 
-    const float TopBarHeight = 120f;
-    const float BottomBarHeight = 168f;
-    const float GuidePanelHeight = 120f;
+    const float EdgePadding = 48f;
+    const float BottomInset = 56f;
+    const float ButtonSpacing = 24f;
+    const float FloatingButtonHeight = 72f;
+    static readonly Vector2 ActionButtonSize = new Vector2(160f, 72f);
+    static readonly Vector2 PrimaryButtonSize = new Vector2(200f, 80f);
     const float CaptureCountdownSeconds = 3f;
-    const float CameraPreviewMiniWidth = 300f;
-    const float CameraPreviewMiniHeight = 169f;
-    const float CameraPreviewMargin = 24f;
+    const float CameraPreviewMiniWidth = 220f;
+    const float CameraPreviewMiniHeight = 124f;
+    const float CameraPreviewMargin = 28f;
 
     public string fallbackLibrarySceneName = StoryFlowScenes.StoryLibrary;
     public string backSceneName = StoryFlowScenes.StoryWorks;
@@ -42,7 +45,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     RawImage _cameraPreviewExpanded;
     GameObject _cameraPreviewOverlay;
     bool _cameraPreviewExpandedOpen;
-    Text _pageTitleText;
     Text _pageIndicatorText;
     Text _guideText;
     Text _statusText;
@@ -115,100 +117,51 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         _backgroundImage.preserveAspect = false;
         _backgroundImage.raycastTarget = false;
 
-        var topBar = CreateUiObject<Image>(root, "TopBar");
-        var topRt = topBar.rectTransform;
-        topRt.anchorMin = new Vector2(0f, 1f);
-        topRt.anchorMax = new Vector2(1f, 1f);
-        topRt.pivot = new Vector2(0.5f, 1f);
-        topRt.sizeDelta = new Vector2(0f, TopBarHeight);
-        topRt.anchoredPosition = Vector2.zero;
-        topBar.color = new Color32(255, 255, 255, 235);
-
         StoryFlowBackButtonUi.EnsureTopLeft(canvas, "← 返回作品集", backSceneName);
 
-        var titleGo = CreateUiLabel(topRt, "StoryTitle", StorySelectionContext.Title, 34, TextAnchor.MiddleCenter);
-        var titleRt = titleGo.GetComponent<RectTransform>();
-        titleRt.anchorMin = new Vector2(0.22f, 0f);
-        titleRt.anchorMax = new Vector2(0.78f, 1f);
-        titleRt.offsetMin = Vector2.zero;
-        titleRt.offsetMax = Vector2.zero;
-
-        _pageTitleText = CreateUiLabel(topRt, "PageTitle", "", 28, TextAnchor.MiddleRight)
-            .GetComponent<Text>();
-        var pageTitleRt = _pageTitleText.rectTransform;
-        pageTitleRt.anchorMin = new Vector2(0.72f, 0.1f);
-        pageTitleRt.anchorMax = new Vector2(0.98f, 0.9f);
-        pageTitleRt.offsetMin = Vector2.zero;
-        pageTitleRt.offsetMax = Vector2.zero;
-
-        _pageIndicatorText = CreateUiLabel(topRt, "PageIndicator", "", 24, TextAnchor.MiddleRight)
-            .GetComponent<Text>();
+        _pageIndicatorText = CreateOverlayText(root, "PageIndicator", "", 36, TextAnchor.LowerRight);
         var indicatorRt = _pageIndicatorText.rectTransform;
-        indicatorRt.anchorMin = new Vector2(0.58f, 0.1f);
-        indicatorRt.anchorMax = new Vector2(0.72f, 0.9f);
-        indicatorRt.offsetMin = Vector2.zero;
-        indicatorRt.offsetMax = Vector2.zero;
-        _pageIndicatorText.color = new Color32(90, 96, 110, 255);
+        indicatorRt.anchorMin = new Vector2(1f, 0f);
+        indicatorRt.anchorMax = new Vector2(1f, 0f);
+        indicatorRt.pivot = new Vector2(1f, 0f);
+        indicatorRt.sizeDelta = new Vector2(420f, 64f);
+        indicatorRt.anchoredPosition = new Vector2(
+            -EdgePadding,
+            BottomInset + FloatingButtonHeight + 20f);
 
-        var guidePanel = CreateUiObject<Image>(root, "GuidePanel");
-        var guideRt = guidePanel.rectTransform;
+        _guideText = CreateOverlayText(root, "GuideText", "", 32, TextAnchor.LowerLeft);
+        var guideRt = _guideText.rectTransform;
         guideRt.anchorMin = new Vector2(0f, 0f);
-        guideRt.anchorMax = new Vector2(1f, 0f);
-        guideRt.pivot = new Vector2(0.5f, 0f);
-        guideRt.sizeDelta = new Vector2(0f, GuidePanelHeight);
-        guideRt.anchoredPosition = new Vector2(0f, BottomBarHeight);
-        guidePanel.color = new Color32(255, 255, 255, 230);
+        guideRt.anchorMax = new Vector2(0.62f, 0f);
+        guideRt.pivot = new Vector2(0f, 0f);
+        guideRt.sizeDelta = new Vector2(0f, 120f);
+        guideRt.anchoredPosition = new Vector2(EdgePadding, BottomInset + FloatingButtonHeight + 12f);
 
-        _guideText = CreateUiLabel(guidePanel.transform, "GuideText", "", 30, TextAnchor.MiddleLeft)
-            .GetComponent<Text>();
-        var guideTextRt = _guideText.rectTransform;
-        guideTextRt.anchorMin = new Vector2(0.03f, 0.1f);
-        guideTextRt.anchorMax = new Vector2(0.97f, 0.9f);
-        guideTextRt.offsetMin = Vector2.zero;
-        guideTextRt.offsetMax = Vector2.zero;
+        _voiceGuideButton = CreateFloatingButton(root, "VoiceGuideButton", "播放引导", ActionButtonSize, false);
+        _rebuildButton = CreateFloatingButton(root, "RebuildButton", "重搭本页", ActionButtonSize, false);
+        _confirmButton = CreateFloatingButton(root, "ConfirmButton", "确认生成", PrimaryButtonSize, true);
+        _nextPageButton = CreateFloatingButton(root, "NextPageButton", "下一页", ActionButtonSize, false);
 
-        var bottomBar = CreateUiObject<Image>(root, "BottomBar");
-        var bottomRt = bottomBar.rectTransform;
-        bottomRt.anchorMin = new Vector2(0f, 0f);
-        bottomRt.anchorMax = new Vector2(1f, 0f);
-        bottomRt.pivot = new Vector2(0.5f, 0f);
-        bottomRt.sizeDelta = new Vector2(0f, BottomBarHeight);
-        bottomRt.anchoredPosition = Vector2.zero;
-        bottomBar.color = new Color32(248, 249, 252, 250);
-
-        var bottomLayout = bottomBar.gameObject.AddComponent<HorizontalLayoutGroup>();
-        bottomLayout.padding = new RectOffset(32, 32, 20, 20);
-        bottomLayout.spacing = 20f;
-        bottomLayout.childAlignment = TextAnchor.MiddleCenter;
-        bottomLayout.childControlWidth = true;
-        bottomLayout.childForceExpandWidth = true;
-        bottomLayout.childControlHeight = true;
-        bottomLayout.childForceExpandHeight = true;
-
-        _voiceGuideButton = CreateBottomButton(bottomBar.transform, "VoiceGuideButton", "播放引导");
-        _confirmButton = CreateBottomButton(bottomBar.transform, "ConfirmButton", "确认生成");
-        _rebuildButton = CreateBottomButton(bottomBar.transform, "RebuildButton", "重搭本页");
-        _nextPageButton = CreateBottomButton(bottomBar.transform, "NextPageButton", "下一页");
+        LayoutFloatingButton(_voiceGuideButton, EdgePadding, false, ActionButtonSize);
+        LayoutFloatingButton(_rebuildButton, EdgePadding + ActionButtonSize.x + ButtonSpacing, false, ActionButtonSize);
+        LayoutFloatingButton(_confirmButton, EdgePadding, true, PrimaryButtonSize);
+        LayoutFloatingButton(_nextPageButton, EdgePadding + PrimaryButtonSize.x + ButtonSpacing, true, ActionButtonSize);
 
         _voiceGuideButton.onClick.AddListener(OnVoiceGuideClicked);
         _confirmButton.onClick.AddListener(OnConfirmClicked);
         _rebuildButton.onClick.AddListener(OnRebuildClicked);
         _nextPageButton.onClick.AddListener(OnNextPageClicked);
 
-        var statusGo = CreateUiLabel(root, "StatusText", "", 22, TextAnchor.LowerCenter);
-        _statusText = statusGo.GetComponent<Text>();
+        _statusText = CreateOverlayText(root, "StatusText", "", 26, TextAnchor.LowerCenter);
         var statusRt = _statusText.rectTransform;
-        statusRt.anchorMin = new Vector2(0.2f, 0f);
-        statusRt.anchorMax = new Vector2(0.8f, 0f);
+        statusRt.anchorMin = new Vector2(0.25f, 0f);
+        statusRt.anchorMax = new Vector2(0.75f, 0f);
         statusRt.pivot = new Vector2(0.5f, 0f);
-        statusRt.sizeDelta = new Vector2(0f, 36f);
-        statusRt.anchoredPosition = new Vector2(0f, BottomBarHeight + GuidePanelHeight + 8f);
-        _statusText.color = new Color32(70, 120, 200, 255);
+        statusRt.sizeDelta = new Vector2(0f, 48f);
+        statusRt.anchoredPosition = new Vector2(0f, BottomInset + FloatingButtonHeight + 72f);
 
         BuildCameraPreviewUi(root);
-        var mini = root.Find("CameraPreviewMini");
-        if (mini != null)
-            mini.SetAsLastSibling();
+        _backgroundImage.transform.SetAsFirstSibling();
         if (_cameraPreviewOverlay != null)
             _cameraPreviewOverlay.transform.SetAsLastSibling();
     }
@@ -223,11 +176,11 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         miniRt.anchorMax = new Vector2(1f, 1f);
         miniRt.pivot = new Vector2(1f, 1f);
         miniRt.sizeDelta = new Vector2(CameraPreviewMiniWidth, CameraPreviewMiniHeight);
-        miniRt.anchoredPosition = new Vector2(-CameraPreviewMargin, -TopBarHeight - CameraPreviewMargin);
+        miniRt.anchoredPosition = new Vector2(-CameraPreviewMargin, -CameraPreviewMargin);
 
         var miniFrame = CreateUiObject<Image>(miniRt, "Frame");
         StretchFull(miniFrame.rectTransform);
-        miniFrame.color = new Color32(24, 28, 36, 230);
+        miniFrame.color = new Color32(0, 0, 0, 140);
 
         _cameraPreviewMini = CreateCameraPreviewRawImage(miniFrame.transform, "Preview");
 
@@ -255,7 +208,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         panelRt.anchorMax = new Vector2(0.5f, 0.5f);
         panelRt.pivot = new Vector2(0.5f, 0.5f);
         panelRt.sizeDelta = new Vector2(1280f, 760f);
-        panel.color = new Color32(24, 28, 36, 245);
+        panel.color = new Color32(0, 0, 0, 200);
 
         _cameraPreviewExpanded = CreateCameraPreviewRawImage(panel.transform, "ExpandedPreview");
 
@@ -313,10 +266,13 @@ public class StoryCreationPageBootstrap : MonoBehaviour
                 _backgroundImage.color = new Color32(230, 235, 245, 255);
         }
 
-        if (_pageTitleText != null)
-            _pageTitleText.text = page.pageTitle ?? "";
         if (_pageIndicatorText != null)
-            _pageIndicatorText.text = $"{_pageIndex + 1} / {_pages.Length}";
+        {
+            string title = page.pageTitle ?? "";
+            _pageIndicatorText.text = string.IsNullOrEmpty(title)
+                ? $"{_pageIndex + 1} / {_pages.Length}"
+                : $"{_pageIndex + 1} / {_pages.Length}  ·  {title}";
+        }
         if (_guideText != null)
             _guideText.text = page.sceneGuideText ?? "";
 
@@ -360,8 +316,10 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     void SetStatus(string text)
     {
-        if (_statusText != null)
-            _statusText.text = text ?? "";
+        if (_statusText == null)
+            return;
+        _statusText.text = text ?? "";
+        _statusText.gameObject.SetActive(!string.IsNullOrWhiteSpace(_statusText.text));
     }
 
     void OnVoiceGuideClicked()
@@ -476,17 +434,35 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         return go;
     }
 
-    static Button CreateBottomButton(Transform parent, string name, string label)
+    static Text CreateOverlayText(Transform parent, string name, string text, int fontSize, TextAnchor align)
+    {
+        var go = CreateUiLabel(parent, name, text, fontSize, align);
+        var t = go.GetComponent<Text>();
+        t.color = Color.white;
+        t.horizontalOverflow = HorizontalWrapMode.Wrap;
+        t.verticalOverflow = VerticalWrapMode.Overflow;
+        var outline = go.AddComponent<Outline>();
+        outline.effectColor = new Color32(0, 0, 0, 200);
+        outline.effectDistance = new Vector2(2f, -2f);
+        t.raycastTarget = false;
+        return t;
+    }
+
+    static Button CreateFloatingButton(
+        Transform parent,
+        string name,
+        string label,
+        Vector2 size,
+        bool primary)
     {
         var go = new GameObject(name, typeof(RectTransform));
         go.layer = LayerMask.NameToLayer("UI");
         go.transform.SetParent(parent, false);
-        var le = go.AddComponent<LayoutElement>();
-        le.minHeight = 88f;
-        le.preferredHeight = 88f;
 
         var img = go.AddComponent<Image>();
-        img.color = new Color32(66, 133, 244, 255);
+        img.color = primary
+            ? new Color32(255, 255, 255, 235)
+            : new Color32(0, 0, 0, 120);
         var btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
 
@@ -497,11 +473,35 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         StretchFull(textRt);
         var text = textGo.AddComponent<Text>();
         text.font = BuiltinUIFont;
-        text.fontSize = 28;
+        text.fontSize = primary ? 30 : 26;
+        text.fontStyle = primary ? FontStyle.Bold : FontStyle.Normal;
         text.alignment = TextAnchor.MiddleCenter;
-        text.color = Color.white;
+        text.color = primary ? new Color32(40, 44, 52, 255) : Color.white;
         text.text = label;
+
+        if (!primary)
+        {
+            var outline = textGo.AddComponent<Outline>();
+            outline.effectColor = new Color32(0, 0, 0, 160);
+            outline.effectDistance = new Vector2(1.5f, -1.5f);
+        }
+
+        go.GetComponent<RectTransform>().sizeDelta = size;
         return btn;
+    }
+
+    static void LayoutFloatingButton(Button button, float inset, bool alignRight, Vector2 size)
+    {
+        if (button == null)
+            return;
+
+        var rt = button.GetComponent<RectTransform>();
+        var xAnchor = alignRight ? 1f : 0f;
+        rt.anchorMin = new Vector2(xAnchor, 0f);
+        rt.anchorMax = new Vector2(xAnchor, 0f);
+        rt.pivot = new Vector2(xAnchor, 0f);
+        rt.sizeDelta = size;
+        rt.anchoredPosition = new Vector2(alignRight ? -inset : inset, BottomInset);
     }
 
     static void StretchFull(RectTransform rt)
