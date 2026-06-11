@@ -183,19 +183,7 @@ public class StoryProloguePictureBook : MonoBehaviour
         if (startBuildButton != null)
         {
             startBuildButton.onClick.RemoveAllListeners();
-            startBuildButton.onClick.AddListener(() =>
-            {
-                if (!StorySelectionContext.HasStoryWorks)
-                {
-                    Debug.LogError(
-                        $"StoryPrologue: 故事「{StorySelectionContext.Title}」未配置有效的 Works（关联积木作品 + Tutorial Scene Name），无法进入 StoryWorks。请在 StoryDefinition 资产里填写 Works。");
-                    return;
-                }
-
-                var sceneName = StorySelectionContext.StoryWorksSceneName.Trim();
-                Debug.Log($"StoryPrologue: 进入故事作品集 → {sceneName}");
-                SceneManager.LoadScene(sceneName);
-            });
+            startBuildButton.onClick.AddListener(OnStartBuildClicked);
         }
     }
 
@@ -231,5 +219,19 @@ public class StoryProloguePictureBook : MonoBehaviour
             return;
         _index++;
         ShowPage(_index);
+    }
+
+    void OnStartBuildClicked()
+    {
+        if (!StorySelectionContext.HasStoryWorks)
+        {
+            Debug.LogError(
+                $"StoryPrologue: 故事「{StorySelectionContext.Title}」未配置有效的 Works，无法进入 StoryWorks。请在 StoryDefinition 里填写积木作品与 Tutorial Scene Name。");
+            return;
+        }
+
+        var worksScene = StorySelectionContext.StoryWorksSceneName.Trim();
+        Debug.Log($"StoryPrologue: 进入故事作品集 → {worksScene}");
+        SceneManager.LoadScene(worksScene);
     }
 }

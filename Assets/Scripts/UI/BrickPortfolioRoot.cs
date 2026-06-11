@@ -61,6 +61,9 @@ public class BrickPortfolioRoot : MonoBehaviour
     public bool showBrickLibraryButton = true;
     public string brickLibrarySceneName = StoryFlowScenes.BrickLibrary;
     public string brickLibraryButtonLabel = "积木库";
+    [Tooltip("StoryWorks 模式下，学完积木教程后显示，进入分页故事创作")]
+    public bool showStartCreationButton = true;
+    public string startCreationButtonLabel = "开始创作故事";
 
     StoryCatalog _catalog;
 
@@ -70,6 +73,7 @@ public class BrickPortfolioRoot : MonoBehaviour
             _catalog = GetComponent<StoryCatalog>();
 
         TryCreateNavButtons();
+        TryCreateStartCreationButton();
     }
 
     void Start()
@@ -261,5 +265,85 @@ public class BrickPortfolioRoot : MonoBehaviour
                 brickLibrarySceneName,
                 column);
         }
+    }
+
+    void TryCreateStartCreationButton()
+    {
+        if (portfolioKind != PortfolioKind.StoryWorks ||
+            !showStartCreationButton ||
+            !StorySelectionContext.HasCreationPages)
+            return;
+
+        var canvas = cardListContent != null
+            ? cardListContent.GetComponentInParent<Canvas>()
+            : null;
+        canvas ??= FindObjectOfType<Canvas>();
+        if (canvas == null)
+            return;
+
+        var canvasRt = canvas.GetComponent<RectTransform>();
+        var existing = canvasRt.Find("StartCreationButton");
+        Button btn;
+        if (existing != null)
+        {
+            btn = existing.GetComponent<Button>();
+            if (btn == null)
+                return;
+        }
+        else
+        {
+            var go = new GameObject("StartCreationButton", typeof(RectTransform));
+            go.layer = LayerMask.NameToLayer("UI");
+            var rt = go.GetComponent<RectTransform>();
+            rt.SetParent(canvasRt, false);
+            rt.anchorMin = new Vector2(1f, 0f);
+            rt.anchorMax = new Vector2(1f, 0f);
+            rt.pivot = new Vector2(1f, 0f);
+            rt.sizeDelta = new Vector2(280f, 88f);
+            rt.anchoredPosition = new Vector2(-40f, 40f);
+
+            var img = go.AddComponent<Image>();
+            img.color = new Color32(52, 168, 83, 255);
+            btn = go.AddComponent<Button>();
+            btn.targetGraphic = img;
+
+            var labelGo = new GameObject("Label", typeof(RectTransform));
+            labelGo.layer = LayerMask.NameToLayer("UI");
+            var labelRt = labelGo.GetComponent<RectTransform>();
+            labelRt.SetParent(rt, false);
+            labelRt.anchorMin = Vector2.zero;
+            labelRt.anchorMax = Vector2.one;
+            labelRt.offsetMin = Vector2.zero;
+            labelRt.offsetMax = Vector2.zero;
+            var text = labelGo.AddComponent<Text>();
+            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+            text.fontSize = 30;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = Color.white;
+            text.text = startCreationButtonLabel;
+        }
+
+        var labelText = btn.GetComponentInChildren<Text>();
+        if (labelText != null)
+            labelText.text = startCreationButtonLabel;
+
+        btn.onClick.RemoveAllListeners();
+        btn.onClick.AddListener(OnStartCreationClicked);
+        btn.transform.SetAsLastSibling();
+    }
+
+    void OnStartCreationClicked()
+    {
+        if (!StorySelectionContext.HasCreationPages)
+        {
+            Debug.LogWarning("StoryWorks: 当前故事未配置 creationPages，无法进入故事创作。");
+            return;
+        }
+
+        StorySessionCache.BeginSession(StorySelectionContext.StoryId, StorySelectionContext.Title);
+        var sceneName = StorySelectionContext.ResolveCreationSceneName();
+        Debug.Log($"StoryWorks: 进入分页故事创作 → {sceneName}");
+        SceneManager.LoadScene(sceneName);
     }
 }

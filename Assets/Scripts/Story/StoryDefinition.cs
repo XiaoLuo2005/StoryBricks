@@ -16,6 +16,33 @@ public class StoryDefinition : ScriptableObject
         public Sprite thumbnail;
     }
 
+    /// <summary>
+    /// 单页故事创作配置：固定背景、情境引导、本页识别期望。按顺序组成 P1/P2/P3… 分页创作流程。
+    /// </summary>
+    [Serializable]
+    public class StoryPageDefinition
+    {
+        [Tooltip("页唯一标识，如 p1_start；供缓存与日志使用")]
+        public string pageId = "p1";
+
+        [Tooltip("页标题，如「起跑线」；创作场景顶栏或调试显示")]
+        public string pageTitle = "第 1 页";
+
+        [Tooltip("本页固定背景（起跑线 / 大树 / 终点等）")]
+        public Sprite backgroundSprite;
+
+        [TextArea(2, 6)]
+        [Tooltip("屏幕情境引导文案")]
+        public string sceneGuideText = "";
+
+        [TextArea(2, 6)]
+        [Tooltip("语音引导话术（TTS 或状态机朗读）")]
+        public string voiceGuideText = "";
+
+        [Tooltip("本页期望出现的角色 ArUco ID（1–20）；留空表示不校验")]
+        public int[] requiredCharacterIds;
+    }
+
     public string storyId = "story_id";
     public string title = "故事标题";
     [TextArea(2, 6)]
@@ -29,4 +56,11 @@ public class StoryDefinition : ScriptableObject
     public string storyWorksSceneName = "";
     [Tooltip("本故事包含的积木作品（如龟兔赛跑：兔子 + 乌龟）")]
     public StoryBrickWorkEntry[] works;
+
+    [Header("分页故事创作")]
+    [Tooltip("按顺序的分页创作配置（P1 起跑 → P2 大树 → P3 终点等）")]
+    public StoryPageDefinition[] creationPages;
+
+    [Tooltip("分页创作场景名；留空则待 StoryCreation 场景落地后填写")]
+    public string creationSceneName = "";
 }
