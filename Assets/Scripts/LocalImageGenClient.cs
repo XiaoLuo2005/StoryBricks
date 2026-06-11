@@ -38,6 +38,12 @@ public class LocalImageGenClient : MonoBehaviour
     [Tooltip("识别到对应 markerId 时使用该行提示词请求生图；多条相同 ID 时取列表中最靠前的一条。留空则沿用旧逻辑：仅 ID 0 使用组件内保存的默认提示词（已隐藏，可通过右键 Generate Image 调试）。")]
     public MarkerPromptMapping[] markerPromptMappings;
 
+    void Start()
+    {
+        // 游戏启动时，默认隐藏图片 UI
+        SetImageUIVisibility(false);
+    }
+
     /// <summary>
     /// 根据 ArUco 标记 ID 查找配置的提示词并生图；未配置则跳过。
     /// </summary>
@@ -206,6 +212,8 @@ public class LocalImageGenClient : MonoBehaviour
         if (targetImage == null)
             yield break;
 
+        SetImageUIVisibility(true);
+
         var previous = targetImage.texture as Texture2D;
         targetImage.texture = tex;
         if (previous != null && previous != tex)
@@ -230,4 +238,19 @@ public class LocalImageGenClient : MonoBehaviour
         public string image_url;
         public string model;
     }
+    /// <summary>
+    /// 控制生图 UI 的显示和隐藏
+    /// </summary>
+    private void SetImageUIVisibility(bool visible)
+    {
+        if (targetImage != null)
+        {
+            targetImage.gameObject.SetActive(visible);
+        }
+        else if (targetImage != null)
+        {
+            targetImage.gameObject.SetActive(visible);
+        }
+    }
 }
+
