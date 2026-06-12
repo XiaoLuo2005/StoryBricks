@@ -19,7 +19,7 @@ public static class StoryBricksSetupBrickLibrary
     {
         StoryBricksSetupStorySummary.EnsureCardPrefabPublic();
         SetupScene();
-        EnsureInBuildSettings(ScenePath);
+        StoryBricksBuildSettings.EnsureSceneEnabled(ScenePath);
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
             "已搭建 BrickLibrary（积木作品集）：\n" +
@@ -131,15 +131,6 @@ public static class StoryBricksSetupBrickLibrary
             tutorialSceneName = StoryFlowScenes.RabbitBuild,
             thumbnail = thumb,
         };
-    }
-
-    static void EnsureInBuildSettings(string scenePath)
-    {
-        var list = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
-        if (list.Any(s => s.path == scenePath))
-            return;
-        list.Add(new EditorBuildSettingsScene(scenePath, true));
-        EditorBuildSettings.scenes = list.ToArray();
     }
 
     static GameObject Child(Transform parent, string name)

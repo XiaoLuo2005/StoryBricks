@@ -22,6 +22,9 @@ public class ArUcoDetector : MonoBehaviour
     /// 其他脚本可通过此属性，实时获取当前帧所有检测到的 ArUco 码及其坐标
     /// </summary>
     public List<MarkerData> DetectedMarkers { get; private set; } = new List<MarkerData>();
+
+    /// <summary>带 ArUco 标注的实时画面纹理，供创作页放大预览等复用。</summary>
+    public Texture2D OutputTexture => outputTexture;
     // ==================================================================
 
     [Header("UI显示")]
@@ -76,12 +79,8 @@ public class ArUcoDetector : MonoBehaviour
     {
         if (generateButton != null)
         {
-            generateButton.gameObject.SetActive(false); // 默认隐藏
-            generateButton.onClick.AddListener(OnGenerateButtonClick); // 绑定点击事件
-        }
-        else
-        {
-            Debug.LogError("ArUcoDetector: 未在 Inspector 中绑定 generateButton！");
+            generateButton.gameObject.SetActive(false);
+            generateButton.onClick.AddListener(OnGenerateButtonClick);
         }
 
         // 1. 初始化摄像头
@@ -130,7 +129,11 @@ public class ArUcoDetector : MonoBehaviour
             {
                 rgbaMat = new Mat(webCamTexture.height, webCamTexture.width, CvType.CV_8UC4);
                 outputTexture = new Texture2D(rgbaMat.cols(), rgbaMat.rows(), TextureFormat.RGBA32, false);
-                displayImage.texture = outputTexture;
+                if (displayImage != null)
+                {
+                    displayImage.texture = outputTexture;
+                    displayImage.color = Color.white;
+                }
             }
 
             OpenCVMatUtils.WebCamTextureToMat(webCamTexture, rgbaMat);

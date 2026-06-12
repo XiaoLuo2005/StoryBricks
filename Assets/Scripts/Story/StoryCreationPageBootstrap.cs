@@ -52,6 +52,10 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     Button _confirmButton;
     Button _rebuildButton;
     Button _nextPageButton;
+    ArUcoDetector _arUcoDetector;
+
+    /// <summary>创作页摄像头与 ArUco 检测器，供后续识别/生图流程读取。</summary>
+    public ArUcoDetector CameraDetector => _arUcoDetector;
 
     static Font BuiltinUIFont => Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
 
@@ -82,6 +86,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         _pageIndex = Mathf.Clamp(StorySessionCache.CurrentPageIndex, 0, _pages.Length - 1);
         EnsureEventSystem();
         BuildUi();
+        SetupCameraDetector();
         ShowCurrentPage();
         SetPhase(CreationPhase.Building);
     }
@@ -166,6 +171,29 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             _cameraPreviewOverlay.transform.SetAsLastSibling();
     }
 
+    void SetupCameraDetector()
+    {
+        if (_cameraPreviewMini == null)
+            return;
+
+        _arUcoDetector = GetComponent<ArUcoDetector>();
+        if (_arUcoDetector == null)
+            _arUcoDetector = gameObject.AddComponent<ArUcoDetector>();
+
+        _arUcoDetector.displayImage = _cameraPreviewMini;
+        _cameraPreviewMini.color = Color.white;
+        if (_cameraPreviewExpanded != null)
+            _cameraPreviewExpanded.color = Color.white;
+    }
+
+    void LateUpdate()
+    {
+        if (!_cameraPreviewExpandedOpen || _cameraPreviewExpanded == null || _cameraPreviewMini == null)
+            return;
+        if (_cameraPreviewExpanded.texture != _cameraPreviewMini.texture)
+            _cameraPreviewExpanded.texture = _cameraPreviewMini.texture;
+    }
+
     void BuildCameraPreviewUi(RectTransform root)
     {
         var miniRoot = new GameObject("CameraPreviewMini", typeof(RectTransform));
@@ -208,9 +236,10 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         panelRt.anchorMax = new Vector2(0.5f, 0.5f);
         panelRt.pivot = new Vector2(0.5f, 0.5f);
         panelRt.sizeDelta = new Vector2(1280f, 760f);
-        panel.color = new Color32(0, 0, 0, 200);
+        panel.color = new Color32(255, 255, 255, 24);
 
         _cameraPreviewExpanded = CreateCameraPreviewRawImage(panel.transform, "ExpandedPreview");
+        _cameraPreviewExpanded.color = Color.white;
 
         var panelBtn = panel.gameObject.AddComponent<Button>();
         panelBtn.targetGraphic = panel;
@@ -227,7 +256,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         rt.offsetMin = new Vector2(4f, 4f);
         rt.offsetMax = new Vector2(-4f, -4f);
         var raw = go.AddComponent<RawImage>();
-        raw.color = new Color32(36, 40, 48, 255);
+        raw.color = Color.white;
         raw.raycastTarget = false;
         return raw;
     }
@@ -238,14 +267,20 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         if (_cameraPreviewOverlay != null)
             _cameraPreviewOverlay.SetActive(open);
         if (open && _cameraPreviewExpanded != null && _cameraPreviewMini != null)
+        {
             _cameraPreviewExpanded.texture = _cameraPreviewMini.texture;
+            _cameraPreviewExpanded.color = Color.white;
+        }
     }
 
-    /// <summary>后续接入摄像头时，调用此方法同时更新小窗与放大视图。</summary>
+    /// <summary>手动替换预览纹理（默认由 ArUcoDetector 驱动小窗）。</summary>
     public void SetCameraPreviewTexture(Texture texture)
     {
         if (_cameraPreviewMini != null)
+        {
             _cameraPreviewMini.texture = texture;
+            _cameraPreviewMini.color = texture != null ? Color.white : new Color32(36, 40, 48, 255);
+        }
         if (_cameraPreviewExpandedOpen && _cameraPreviewExpanded != null)
             _cameraPreviewExpanded.texture = texture;
     }

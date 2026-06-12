@@ -16,9 +16,10 @@ public static class StoryBricksSetupStorySummary
     {
         EnsureCardPrefabPublic();
         SetupScene();
+        StoryBricksBuildSettings.EnsureSceneEnabled(ScenePath);
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
-            "已搭建 StorySummary：\n• StoryCard.prefab（含 StoryCardView，支持 TMP）\n• ScrollView + StoryLibrary\n\n请在 StoryCatalog 的 Stories 里拖入故事资产。",
+            "已搭建 StorySummary：\n• StoryCard.prefab（含 StoryCardView，支持 TMP）\n• ScrollView + StoryLibrary\n• 已加入并启用 Build Settings\n\n请在 StoryCatalog 的 Stories 里拖入故事资产。",
             "好的");
     }
 

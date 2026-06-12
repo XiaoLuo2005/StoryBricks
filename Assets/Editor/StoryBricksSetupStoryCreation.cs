@@ -1,7 +1,5 @@
 #if UNITY_EDITOR
-using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.SceneManagement;
@@ -14,7 +12,7 @@ public static class StoryBricksSetupStoryCreation
     public static void Setup()
     {
         SetupScene();
-        EnsureInBuildSettings(ScenePath);
+        StoryBricksBuildSettings.EnsureSceneEnabled(ScenePath);
         UpdateTortoiseHareCreationSceneName();
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
@@ -45,22 +43,6 @@ public static class StoryBricksSetupStoryCreation
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
         }
-    }
-
-    static void EnsureInBuildSettings(string scenePath)
-    {
-        var list = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
-        if (list.Any(s => s.path == scenePath))
-            return;
-
-        int insertAt = list.FindIndex(s => s.path.Contains("StoryPrologue"));
-        if (insertAt < 0)
-            insertAt = list.Count;
-        else
-            insertAt += 1;
-
-        list.Insert(insertAt, new EditorBuildSettingsScene(scenePath, true));
-        EditorBuildSettings.scenes = list.ToArray();
     }
 
     static void UpdateTortoiseHareCreationSceneName()

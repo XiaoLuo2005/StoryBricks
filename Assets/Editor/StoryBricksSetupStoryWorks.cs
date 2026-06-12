@@ -19,7 +19,7 @@ public static class StoryBricksSetupStoryWorks
     {
         StoryBricksSetupStorySummary.EnsureCardPrefabPublic();
         SetupScene();
-        EnsureInBuildSettings(ScenePath);
+        StoryBricksBuildSettings.EnsureSceneEnabled(ScenePath);
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
             "已搭建 StoryWorks（故事作品集）：\n" +
@@ -115,15 +115,6 @@ public static class StoryBricksSetupStoryWorks
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
         }
-    }
-
-    static void EnsureInBuildSettings(string scenePath)
-    {
-        var list = new List<EditorBuildSettingsScene>(EditorBuildSettings.scenes);
-        if (list.Any(s => s.path == scenePath))
-            return;
-        list.Insert(4, new EditorBuildSettingsScene(scenePath, true));
-        EditorBuildSettings.scenes = list.ToArray();
     }
 
     static GameObject Child(Transform parent, string name)
