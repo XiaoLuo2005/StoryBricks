@@ -1,0 +1,143 @@
+/**
+ * StoryBricks 生图网关
+ *
+ * POST /generate
+ *   - prompt, model, size, n
+ *   - reference_images?: string[]  (URL 或 data:image/...;base64,...，1~4 张 → img2img)
+ *
+ * 启动:
+ *   cd Server/storybricks-image-gen-web
+ *   set DASHSCOPE_API_KEY=sk-xxx
+ *   node server.mjs
+ */
+import http from "node:http";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { handleGenerate } from "./dashscope-generate.mjs";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const HOST = (process.env.HOST || "0.0.0.0").trim();
+const PORT = Number(process.env.PORT || 8800);
+const MAX_BODY_BYTES = Number(process.env.MAX_BODY_BYTES || 40 * 1024 * 1024);
+
+loadDotEnv(path.join(__dirname, ".env"));
+
+function loadDotEnv(filePath) {
+  if (!fs.existsSync(filePath)) return;
+  const text = fs.readFileSync(filePath, "utf8");
+  for (const line of text.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq <= 0) continue;
+    const key = trimmed.slice(0, eq).trim();
+    let val = trimmed.slice(eq + 1).trim();
+    if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
+      val = val.slice(1, -1);
+    }
+    if (!process.env[key]) process.env[key] = val;
+  }
+}
+
+function readBody(req) {
+  return new Promise((resolve, reject) => {
+    const chunks = [];
+    let total = 0;
+    req.on("data", (c) => {
+      total += c.length;
+      if (total > MAX_BODY_BYTES) {
+        reject(new Error("body too large"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+function sendJson(res, status, obj) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Access-Control-Allow-Origin": "*",
+  });
+  res.end(JSON.stringify(obj));
+}
+
+const server = http.createServer(async (req, res) => {
+  const host = req.headers.host || "127.0.0.1";
+  const url = new URL(req.url || "/", `http://${host}`);
+
+  if (req.method === "OPTIONS") {
+    res.writeHead(204, {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type",
+      "Access-Control-Max-Age": "86400",
+    });
+    res.end();
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/health") {
+    sendJson(res, 200, {
+      ok: true,
+      service: "storybricks-image-gen",
+      has_api_key: !!(process.env.DASHSCOPE_API_KEY || "").trim(),
+      supports_reference_images: true,
+    });
+    return;
+  }
+
+  if (req.method === "GET" && url.pathname === "/generate") {
+    res.writeHead(302, { Location: "/" });
+    res.end();
+    return;
+  }
+
+  if (req.method === "POST" && url.pathname === "/generate") {
+    let bodyBuf;
+    try {
+      bodyBuf = await readBody(req);
+    } catch (e) {
+      sendJson(res, 413, { detail: String(e.message || e) });
+      return;
+    }
+
+    let body = {};
+    try {
+      body = bodyBuf.length ? JSON.parse(bodyBuf.toString("utf8")) : {};
+    } catch {
+      sendJson(res, 400, { detail: "Invalid JSON body" });
+      return;
+    }
+
+    const { status, json } = await handleGenerate(body);
+    sendJson(res, status, json);
+    return;
+  }
+
+  if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
+    const htmlPath = path.join(__dirname, "index.html");
+    if (fs.existsSync(htmlPath)) {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
+      res.end(fs.readFileSync(htmlPath, "utf8"));
+      return;
+    }
+  }
+
+  res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+  res.end("Not found");
+});
+
+server.listen(PORT, HOST, () => {
+  console.log(`StoryBricks image-gen server: http://${HOST}:${PORT}/generate`);
+  console.log(`Health: http://${HOST}:${PORT}/health`);
+  if ((process.env.DASHSCOPE_API_KEY || "").trim()) {
+    console.log("DASHSCOPE_API_KEY: configured");
+  } else {
+    console.warn("WARNING: DASHSCOPE_API_KEY not set — all /generate requests will fail.");
+  }
+});

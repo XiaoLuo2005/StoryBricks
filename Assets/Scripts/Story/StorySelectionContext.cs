@@ -10,6 +10,8 @@ public static class StorySelectionContext
     public static Sprite Cover { get; private set; }
     public static Sprite[] ProloguePages { get; private set; }
     public static StoryDefinition.StoryPageDefinition[] CreationPages { get; private set; }
+    public static StoryDefinition.CharacterReferenceEntry[] CharacterReferences { get; private set; }
+    public static string StylePromptPrefix { get; private set; } = "";
     public static string CreationSceneName { get; private set; } = "";
     public static BrickPortfolioRoot.BrickWorkItem[] Works { get; private set; }
 
@@ -35,6 +37,10 @@ public static class StorySelectionContext
         Cover = def.thumbnail;
         ProloguePages = def.prologuePages != null && def.prologuePages.Length > 0 ? def.prologuePages : null;
         CreationPages = def.creationPages != null && def.creationPages.Length > 0 ? def.creationPages : null;
+        CharacterReferences = def.characterReferences != null && def.characterReferences.Length > 0
+            ? def.characterReferences
+            : null;
+        StylePromptPrefix = def.stylePromptPrefix ?? "";
         CreationSceneName = def.creationSceneName ?? "";
         StoryWorksSceneName = string.IsNullOrWhiteSpace(def.storyWorksSceneName)
             ? StoryFlowScenes.StoryWorks
@@ -86,6 +92,8 @@ public static class StorySelectionContext
         Cover = null;
         ProloguePages = null;
         CreationPages = null;
+        CharacterReferences = null;
+        StylePromptPrefix = "";
         CreationSceneName = "";
         Works = Array.Empty<BrickPortfolioRoot.BrickWorkItem>();
     }

@@ -1,32 +1,105 @@
-# StoryBricks 本地生图网页（替代第三方网页）
+# StoryBricks 生图网关（wan2.6 + img2img）
 
-与 Unity `LocalImageGenClient` 相同接口：`POST` JSON 到 `/generate`，字段 `prompt`、`model`、`size`（默认 `1024*1024`）、`n`；响应里使用 `image_url` 展示图片。
+对接阿里云百炼 **wan2.6-image**，为 Unity `LocalImageGenClient` 提供统一 HTTP 接口。
 
-## 为什么需要 `proxy.mjs`
+## 接口
 
-浏览器从本机页面请求公网 `http://39.97...` 时，若服务端未返回 CORS 头，会报跨域错误。本地代理把请求转到上游，页面只访问 `http://127.0.0.1:8765/generate`，无跨域问题。
+`POST /generate`（JSON）
 
-## 使用步骤
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `prompt` | 是 | 生图/编辑指令 |
+| `model` | 否 | 默认 `wan2.6-image` |
+| `size` | 否 | 默认 `1920*1080`（16:9，也支持 `1K` / `2K`） |
+| `n` | 否 | 生成张数，默认 `1` |
+| `reference_images` | 否 | **1~4 张**参考图（HTTP URL 或 `data:image/png;base64,...`） |
 
-1. 安装 **Node.js 18+**。
-2. 在终端进入本目录：
+### 模式
 
-   `cd Server/storybricks-image-gen-web`
+- **有 `reference_images`**：同步 **图像编辑（img2img）**，传入**角色标准形象图**（非页背景）
+- **无 `reference_images`**：异步 **文生图**，服务端轮询 task 后返回 `image_url`
 
-3. （可选）指定上游地址，默认已写阿里云示例：
+### 响应示例
 
-   PowerShell: `$env:STORYBRICKS_GENERATE_URL="http://你的服务器:端口/generate"`
+```json
+{
+  "task_id": "xxx",
+  "image_url": "https://dashscope-result-bj.oss-cn-beijing.aliyuncs.com/....png",
+  "model": "wan2.6-image",
+  "mode": "image_edit"
+}
+```
 
-4. 启动：
+`mode` 为 `image_edit` 或 `text_to_image`。
 
-   `node proxy.mjs`
+## 部署（生产 / 云服务器）
 
-5. 浏览器打开：**http://127.0.0.1:8765/** ，填写提示词后点「生成」。
+1. 安装 **Node.js 18+**
+2. 进入目录并配置密钥：
 
-改端口：`$env:PORT=9000` 后再 `node proxy.mjs`。
+   ```powershell
+   cd Server/storybricks-image-gen-web
+   copy .env.example .env
+   # 编辑 .env，填入 DASHSCOPE_API_KEY
+   ```
 
-若浏览器出现 `{"detail":"Method Not Allowed"}`：说明在地址栏打开了 **`…/generate`**（浏览器用 **GET**）。请改为打开首页 **`http://127.0.0.1:8765/`**（末尾是 `/`），在页面里点「生成」。
+3. 启动：
 
-## 本机 Python 生图服务
+   ```powershell
+   node server.mjs
+   ```
 
-若你的 `generate` 跑在本机（例如 `http://127.0.0.1:某端口/generate`），把 `STORYBRICKS_GENERATE_URL` 设成该地址即可。
+4. 健康检查：`GET http://<host>:8800/health`
+
+默认监听 `0.0.0.0:8800`。创作页 `StoryCreationPageBootstrap` 默认连 `http://127.0.0.1:8800/generate`。
+
+### img2img 请求体过大（nginx 413）
+
+角色参考图以 base64 上传，多张大图易超过 nginx `client_max_body_size`（常见 1MB）。
+
+- **本机调试**：用本机 `server.mjs`（默认允许 40MB），Unity 填 `127.0.0.1:8800`
+- **客户端**：`LocalImageGenClient.maxReferenceUploadEdge` 默认 512，自动缩小参考图
+- **云 nginx**：需增大 `client_max_body_size`（如 `20m`）
+
+## 本地调试页（CORS 代理）
+
+浏览器直连公网 API 可能跨域，可用 `proxy.mjs`：
+
+```powershell
+cd Server/storybricks-image-gen-web
+$env:STORYBRICKS_GENERATE_URL="http://127.0.0.1:8800/generate"
+node proxy.mjs
+```
+
+浏览器打开 **http://127.0.0.1:8765/** ，可上传参考图测试 img2img。
+
+若地址栏直接打开 `…/generate` 会报 Method Not Allowed（浏览器发 GET）；请打开首页 `/` 再点「生成」。
+
+## Unity 用法
+
+`LocalImageGenClient` 已支持：
+
+```csharp
+// 文生图
+client.GenerateImage("儿童绘本，兔子在起跑线");
+
+// img2img：角色标准形象参考图（StoryDefinition.characterReferences）
+client.GenerateImageFromSprites(prompt, characterReferenceSprites);
+```
+
+创作页 `StoryCreationPageBootstrap` 会自动：识别 ArUco → 匹配 `characterReferences` → P2+ 追加 P1 锚图 → img2img。
+
+Unity 菜单 **StoryBricks → 龟兔赛跑 → 绑定角色参考图** 可写入 `rabbit.png` / `tortoise.png`。
+
+Inspector 里可配置 `debugReferenceImages`，右键 **Generate Image With References** 调试。
+
+## 环境变量
+
+| 变量 | 默认 | 说明 |
+|------|------|------|
+| `DASHSCOPE_API_KEY` | — | **必填**，百炼 API Key |
+| `PORT` | `8800` | 监听端口 |
+| `HOST` | `0.0.0.0` | 监听地址 |
+| `DASHSCOPE_BASE_URL` | `https://dashscope.aliyuncs.com/api/v1` | 百炼 API 基址 |
+| `POLL_INTERVAL_MS` | `2000` | 文生图轮询间隔 |
+| `POLL_MAX_ATTEMPTS` | `90` | 文生图最大轮询次数 |

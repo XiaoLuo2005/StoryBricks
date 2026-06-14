@@ -38,7 +38,8 @@
   </p>
   <p class="hint">
     与 Unity <code>LocalImageGenClient</code> 相同：POST JSON 到 <code>/generate</code>，字段
-    <code>prompt</code>、<code>model</code>、<code>size</code>（默认 <code>1024*1024</code>）、<code>n</code>。
+    <code>prompt</code>、<code>model</code>、<code>size</code>（默认 <code>1920*1080</code>）、<code>n</code>。
+    传 <code>reference_images</code>（1~4 张 URL 或 base64 data URL）时走 <strong>img2img 图像编辑</strong>。
     请通过下方「本页访问地址」打开（不要直接双击 file://），否则浏览器会拦截跨域。
   </p>
 
@@ -49,10 +50,13 @@
   <input type="text" id="upstream" value="http://39.97.174.49:8800/generate" />
 
   <label>模型 model</label>
-  <input type="text" id="model" value="wanx-v1" />
+  <input type="text" id="model" value="wan2.6-image" />
 
   <label>尺寸 size（与 Unity 一致）</label>
-  <input type="text" id="size" value="1024*1024" />
+  <input type="text" id="size" value="1920*1080" />
+
+  <label>参考图 reference_images（可选，1~4 张，用于 img2img）</label>
+  <input type="file" id="refFiles" accept="image/*" multiple />
 
   <div class="row">
     <div>
@@ -90,18 +94,35 @@
         return (upstream.value || "").trim();
       }
 
+      function readFileAsDataUrl(file) {
+        return new Promise(function (resolve, reject) {
+          var reader = new FileReader();
+          reader.onload = function () { resolve(reader.result); };
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+      }
+
       go.addEventListener("click", async function () {
         var url = buildUrl();
         if (!url) {
           alert("请填写本页访问地址或上游地址");
           return;
         }
+        var refInput = document.getElementById("refFiles");
+        var refFiles = refInput && refInput.files ? Array.prototype.slice.call(refInput.files, 0, 4) : [];
+        var referenceImages = [];
+        for (var i = 0; i < refFiles.length; i++) {
+          referenceImages.push(await readFileAsDataUrl(refFiles[i]));
+        }
+
         var body = {
           prompt: document.getElementById("prompt").value.trim(),
-          model: document.getElementById("model").value.trim() || "wanx-v1",
-          size: document.getElementById("size").value.trim() || "1024*1024",
+          model: document.getElementById("model").value.trim() || "wan2.6-image",
+          size: document.getElementById("size").value.trim() || "1920*1080",
           n: parseInt(document.getElementById("n").value, 10) || 1,
         };
+        if (referenceImages.length > 0) body.reference_images = referenceImages;
         if (!body.prompt) {
           alert("请填写 prompt");
           return;

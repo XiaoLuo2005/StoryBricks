@@ -16,6 +16,20 @@ public class StoryDefinition : ScriptableObject
         public Sprite thumbnail;
     }
 
+    /// <summary>ArUco ID 对应的标准角色参考图，供分页生图时锁定外貌。</summary>
+    [Serializable]
+    public class CharacterReferenceEntry
+    {
+        [Tooltip("ArUco 标记 ID，如 1=兔子、2=乌龟")]
+        public int markerId;
+
+        [Tooltip("角色标准形象（单人、风格统一）")]
+        public Sprite referenceSprite;
+
+        [Tooltip("Prompt 中的角色名，如「兔子」")]
+        public string roleName = "";
+    }
+
     /// <summary>
     /// 单页故事创作配置：固定背景、情境引导、本页识别期望。按顺序组成 P1/P2/P3… 分页创作流程。
     /// </summary>
@@ -58,6 +72,13 @@ public class StoryDefinition : ScriptableObject
     public StoryBrickWorkEntry[] works;
 
     [Header("分页故事创作")]
+    [Tooltip("ArUco ID → 角色标准形象，供 img2img 锁定外貌")]
+    public CharacterReferenceEntry[] characterReferences;
+
+    [TextArea(2, 4)]
+    [Tooltip("每页生图 Prompt 前缀（画风统一）")]
+    public string stylePromptPrefix = "儿童绘本水彩插画，温暖明亮色调，横版16比9";
+
     [Tooltip("按顺序的分页创作配置（P1 起跑 → P2 大树 → P3 终点等）")]
     public StoryPageDefinition[] creationPages;
 

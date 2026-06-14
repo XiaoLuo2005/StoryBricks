@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
@@ -36,11 +37,19 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     public string backSceneName = StoryFlowScenes.StoryWorks;
     public string finishSceneName = StoryFlowScenes.StoryWorks;
 
+    [Header("生图")]
+    [Tooltip("本机调试填 http://127.0.0.1:8800/generate；云服务器需 nginx 放宽 body 限制")]
+    public string imageGenServerUrl = "http://127.0.0.1:8800/generate";
+
     StoryDefinition.StoryPageDefinition[] _pages;
+    StoryDefinition.CharacterReferenceEntry[] _characterReferences;
+    string _stylePromptPrefix;
     int _pageIndex;
     CreationPhase _phase = CreationPhase.Guide;
 
     Image _backgroundImage;
+    RawImage _generatedPageImage;
+    Texture2D _currentGeneratedTexture;
     RawImage _cameraPreviewMini;
     RawImage _cameraPreviewExpanded;
     GameObject _cameraPreviewOverlay;
@@ -53,6 +62,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     Button _rebuildButton;
     Button _nextPageButton;
     ArUcoDetector _arUcoDetector;
+    LocalImageGenClient _imageGenClient;
 
     /// <summary>创作页摄像头与 ArUco 检测器，供后续识别/生图流程读取。</summary>
     public ArUcoDetector CameraDetector => _arUcoDetector;
@@ -77,6 +87,8 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         }
 
         _pages = StorySelectionContext.CreationPages;
+        _characterReferences = StorySelectionContext.CharacterReferences;
+        _stylePromptPrefix = StorySelectionContext.StylePromptPrefix;
         if (!StorySessionCache.HasActiveSession ||
             StorySessionCache.StoryId != StorySelectionContext.StoryId)
         {
@@ -87,6 +99,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         EnsureEventSystem();
         BuildUi();
         SetupCameraDetector();
+        SetupImageGeneration();
         ShowCurrentPage();
         SetPhase(CreationPhase.Building);
     }
@@ -121,6 +134,12 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         _backgroundImage.color = Color.white;
         _backgroundImage.preserveAspect = false;
         _backgroundImage.raycastTarget = false;
+
+        _generatedPageImage = CreateUiObject<RawImage>(root, "GeneratedPage");
+        StretchFull(_generatedPageImage.rectTransform);
+        _generatedPageImage.color = Color.white;
+        _generatedPageImage.raycastTarget = false;
+        _generatedPageImage.gameObject.SetActive(false);
 
         StoryFlowBackButtonUi.EnsureTopLeft(canvas, "← 返回作品集", backSceneName);
 
@@ -184,6 +203,19 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         _cameraPreviewMini.color = Color.white;
         if (_cameraPreviewExpanded != null)
             _cameraPreviewExpanded.color = Color.white;
+    }
+
+    void SetupImageGeneration()
+    {
+        _imageGenClient = GetComponent<LocalImageGenClient>();
+        if (_imageGenClient == null)
+            _imageGenClient = gameObject.AddComponent<LocalImageGenClient>();
+
+        if (_generatedPageImage != null)
+            _imageGenClient.targetImage = _generatedPageImage;
+
+        if (!string.IsNullOrWhiteSpace(imageGenServerUrl))
+            _imageGenClient.serverUrl = imageGenServerUrl.Trim();
     }
 
     void LateUpdate()
@@ -311,8 +343,24 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         if (_guideText != null)
             _guideText.text = page.sceneGuideText ?? "";
 
+        ClearGeneratedPageOverlay();
         UpdateActionButtons();
         SetStatus("");
+    }
+
+    void ClearGeneratedPageOverlay()
+    {
+        if (_generatedPageImage != null)
+        {
+            _generatedPageImage.texture = null;
+            _generatedPageImage.gameObject.SetActive(false);
+        }
+
+        if (_currentGeneratedTexture != null)
+        {
+            Destroy(_currentGeneratedTexture);
+            _currentGeneratedTexture = null;
+        }
     }
 
     StoryDefinition.StoryPageDefinition GetCurrentPage()
@@ -387,12 +435,70 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         }
 
         SetPhase(CreationPhase.Generating);
-        SetStatus("正在识别并生成本页故事…");
-
-        // 占位：组员接入识别结果后，在此校验 requiredCharacterIds、触发 AI 提问、调用生图/文案。
-        yield return new WaitForSeconds(0.6f);
+        SetStatus("正在识别并生成本页绘本…");
 
         var page = GetCurrentPage();
+        var detectedIds = StoryPageGenerationPipeline.CollectDetectedMarkerIds(_arUcoDetector);
+        var validation = StoryPageGenerationPipeline.ValidateRequiredCharacters(page, detectedIds);
+        if (!validation.ok)
+        {
+            SetPhase(CreationPhase.Building);
+            SetStatus(validation.message);
+            yield break;
+        }
+
+        if (_characterReferences == null || _characterReferences.Length == 0)
+        {
+            SetPhase(CreationPhase.Building);
+            SetStatus("故事未配置 characterReferences 角色参考图。");
+            yield break;
+        }
+
+        Texture2D anchor = _pageIndex > 0 ? StorySessionCache.AnchorPageTexture : null;
+        var references = StoryPageGenerationPipeline.CollectCharacterReferenceTextures(
+            validation.detectedIds,
+            _characterReferences,
+            anchor);
+
+        if (references.characterCount == 0)
+        {
+            StoryPageGenerationPipeline.ReleaseTemporaryTextures(references);
+            SetPhase(CreationPhase.Building);
+            SetStatus("未找到已识别角色的参考图，请检查 characterReferences 配置。");
+            yield break;
+        }
+
+        string prompt = StoryPageGenerationPipeline.BuildGenerationPrompt(
+            page,
+            _characterReferences,
+            validation.detectedIds,
+            _stylePromptPrefix,
+            references);
+
+        Debug.Log($"[StoryCreation] img2img prompt:\n{prompt}");
+
+        var outcome = new LocalImageGenClient.GenerateOutcome();
+        yield return _imageGenClient.GenerateImageAndWait(prompt, references.textures, outcome);
+        StoryPageGenerationPipeline.ReleaseTemporaryTextures(references);
+
+        if (!outcome.success)
+        {
+            SetPhase(CreationPhase.Building);
+            SetStatus("生图失败，请重试。");
+            Debug.LogError($"[StoryCreation] 生图失败: {outcome.errorMessage}");
+            yield break;
+        }
+
+        if (_generatedPageImage != null && outcome.texture != null)
+        {
+            _currentGeneratedTexture = outcome.texture;
+            _generatedPageImage.texture = outcome.texture;
+            _generatedPageImage.gameObject.SetActive(true);
+        }
+
+        if (_pageIndex == 0 && outcome.texture != null)
+            StorySessionCache.SetAnchorPageTexture(outcome.texture);
+
         StorySessionCache.RecordCompletedPage(new StorySessionCache.PageRecord
         {
             pageId = page?.pageId ?? "",
@@ -400,7 +506,9 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             sceneGuideText = page?.sceneGuideText ?? "",
             voiceGuideText = page?.voiceGuideText ?? "",
             generatedStoryText = $"（占位）{page?.pageTitle} 的故事段落待接入大模型。",
-            generatedImageNote = "占位：本页绘本图待接入生图服务。",
+            generatedImageNote = $"img2img，参考角色 {references.characterCount} 个" +
+                                 (references.hasAnchor ? " + P1 锚图" : ""),
+            generatedImageUrl = outcome.imageUrl ?? "",
         });
 
         SetPhase(CreationPhase.PageDone);
@@ -413,6 +521,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     {
         StopAllCoroutines();
         SetCameraPreviewExpanded(false);
+        ClearGeneratedPageOverlay();
         SetPhase(CreationPhase.Building);
         SetStatus("已清空本页状态，请重新摆放积木。");
     }

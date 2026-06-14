@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text;
+using UnityEngine;
 
 /// <summary>
 /// 单次故事创作会话的跨页缓存：供 AI 提问、提示词拼接、下一页剧情延续使用。
@@ -17,17 +18,20 @@ public static class StorySessionCache
         public string userVoiceAnswer = "";
         public string generatedStoryText = "";
         public string generatedImageNote = "";
+        public string generatedImageUrl = "";
     }
 
     static string _storyId = "";
     static string _storyTitle = "";
     static int _currentPageIndex;
+    static Texture2D _anchorPageTexture;
     static readonly List<PageRecord> _completedPages = new List<PageRecord>();
 
     public static string StoryId => _storyId;
     public static string StoryTitle => _storyTitle;
     public static int CurrentPageIndex => _currentPageIndex;
     public static IReadOnlyList<PageRecord> CompletedPages => _completedPages;
+    public static Texture2D AnchorPageTexture => _anchorPageTexture;
 
     public static bool HasActiveSession => !string.IsNullOrWhiteSpace(_storyId);
 
@@ -37,6 +41,7 @@ public static class StorySessionCache
         _storyTitle = storyTitle ?? "";
         _currentPageIndex = 0;
         _completedPages.Clear();
+        ClearAnchorPageTexture();
     }
 
     public static void SetCurrentPageIndex(int index)
@@ -83,11 +88,30 @@ public static class StorySessionCache
         return sb.ToString();
     }
 
+    /// <summary>P1 成图，供 P2/P3 img2img 锚定画风与角色。</summary>
+    public static void SetAnchorPageTexture(Texture2D texture)
+    {
+        ClearAnchorPageTexture();
+        if (texture == null)
+            return;
+        _anchorPageTexture = StoryImageUtil.DuplicateTexture(texture);
+    }
+
+    public static void ClearAnchorPageTexture()
+    {
+        if (_anchorPageTexture != null)
+        {
+            UnityEngine.Object.Destroy(_anchorPageTexture);
+            _anchorPageTexture = null;
+        }
+    }
+
     public static void Clear()
     {
         _storyId = "";
         _storyTitle = "";
         _currentPageIndex = 0;
         _completedPages.Clear();
+        ClearAnchorPageTexture();
     }
 }

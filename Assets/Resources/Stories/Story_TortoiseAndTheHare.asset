@@ -30,6 +30,14 @@ MonoBehaviour:
     title: "\u4E4C\u9F9F"
     tutorialSceneName: ToitorseTutorial
     thumbnail: {fileID: 21300000, guid: ecab6ec275ab78a42ac35c46056d4210, type: 3}
+  characterReferences:
+  - markerId: 1
+    referenceSprite: {fileID: 21300000, guid: 85bddfe2b9a952c43b5c9f0d7f1f2817, type: 3}
+    roleName: "\u5154\u5B50"
+  - markerId: 2
+    referenceSprite: {fileID: 21300000, guid: 2b9511736cd1486498f58a63c22bb249, type: 3}
+    roleName: "\u4E4C\u9F9F"
+  stylePromptPrefix: "\u513F\u7AE5\u7ED8\u672C\u6C34\u5F69\u63D2\u753B\uFF0C\u6E29\u6696\u660E\u4EAE\u8272\u8C03\uFF0C\u6A2A\u724816\u6BD49"
   creationPages:
   - pageId: p1_start
     pageTitle: "\u8D77\u8DD1\u7EBF"
