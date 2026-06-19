@@ -19,6 +19,8 @@ public static class StorySessionCache
         public string generatedStoryText = "";
         public string generatedImageNote = "";
         public string generatedImageUrl = "";
+        [TextArea(2, 8)]
+        public string generationPrompt = "";
     }
 
     static string _storyId = "";
@@ -26,6 +28,7 @@ public static class StorySessionCache
     static int _currentPageIndex;
     static Texture2D _anchorPageTexture;
     static readonly List<PageRecord> _completedPages = new List<PageRecord>();
+    static readonly List<Texture2D> _pageTextures = new List<Texture2D>();
 
     public static string StoryId => _storyId;
     public static string StoryTitle => _storyTitle;
@@ -41,6 +44,7 @@ public static class StorySessionCache
         _storyTitle = storyTitle ?? "";
         _currentPageIndex = 0;
         _completedPages.Clear();
+        ClearPageTextures();
         ClearAnchorPageTexture();
     }
 
@@ -49,11 +53,31 @@ public static class StorySessionCache
         _currentPageIndex = Math.Max(0, index);
     }
 
-    public static void RecordCompletedPage(PageRecord record)
+    public static void RecordCompletedPage(PageRecord record, Texture2D pageTexture, int pageIndex)
     {
-        if (record == null)
+        if (record == null || pageIndex < 0)
             return;
-        _completedPages.Add(record);
+
+        if (_completedPages.Count > pageIndex)
+        {
+            DestroyPageTextureAt(pageIndex);
+            _completedPages[pageIndex] = record;
+            _pageTextures[pageIndex] = DuplicatePageTexture(pageTexture);
+            return;
+        }
+
+        if (_completedPages.Count == pageIndex)
+        {
+            _completedPages.Add(record);
+            _pageTextures.Add(DuplicatePageTexture(pageTexture));
+        }
+    }
+
+    public static Texture2D GetPageTexture(int pageIndex)
+    {
+        if (pageIndex < 0 || pageIndex >= _pageTextures.Count)
+            return null;
+        return _pageTextures[pageIndex];
     }
 
     public static PageRecord GetLastCompletedPage()
@@ -112,6 +136,35 @@ public static class StorySessionCache
         _storyTitle = "";
         _currentPageIndex = 0;
         _completedPages.Clear();
+        ClearPageTextures();
         ClearAnchorPageTexture();
+    }
+
+    static Texture2D DuplicatePageTexture(Texture2D pageTexture)
+    {
+        if (pageTexture == null)
+            return null;
+        return StoryImageUtil.DuplicateTexture(pageTexture);
+    }
+
+    static void DestroyPageTextureAt(int index)
+    {
+        if (index < 0 || index >= _pageTextures.Count)
+            return;
+        if (_pageTextures[index] != null)
+        {
+            UnityEngine.Object.Destroy(_pageTextures[index]);
+            _pageTextures[index] = null;
+        }
+    }
+
+    static void ClearPageTextures()
+    {
+        for (int i = 0; i < _pageTextures.Count; i++)
+        {
+            if (_pageTextures[i] != null)
+                UnityEngine.Object.Destroy(_pageTextures[i]);
+        }
+        _pageTextures.Clear();
     }
 }

@@ -1,10 +1,30 @@
-# StoryBricks AI 助教网关
+# StoryBricks 语音 / AI 网关
 
-Node.js **18+**。本服务**仅依赖 `busboy`**（解析 multipart），使用 Node 内置 `http`。
+Node.js **18+**。
 
-**仅对接阿里云灵积 DashScope**：Qwen3-ASR + 通义千问（兼容模式 HTTP）+ CosyVoice TTS。
+## 故事创作（推荐：仅 DeepSeek 卡密）
 
-Unity 只访问本服务，**不要把 `DASHSCOPE_API_KEY` 写进 Unity 工程**。
+```bash
+cd Server/storybricks-tutor-gateway
+copy .env.example .env
+# 编辑 .env，填写 DEEPSEEK_API_KEY=sk-...
+npm install
+npm start
+```
+
+| 能力 | 实现 |
+|------|------|
+| AI 提问 | DeepSeek `deepseek-chat` |
+| 朗读提问 TTS | 微软 Edge 免费语音（无需额外卡密） |
+| 听孩子回答 | 本机 Whisper + DeepSeek 整理口语 |
+
+浏览器访问 `http://127.0.0.1:8787/health` 应看到 `hasDeepSeekKey: true`。
+
+**教程助教**（`/api/tutor/*`）仍可选 `DASHSCOPE_API_KEY`。
+
+---
+
+Unity 只访问本服务，**不要把 API Key 写进 Unity 工程**。
 
 ---
 

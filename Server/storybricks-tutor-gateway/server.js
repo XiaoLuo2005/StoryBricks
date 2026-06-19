@@ -1,29 +1,27 @@
 /**
- * StoryBricks 教程 AI 助教网关（Node 内置 http + busboy）
+ * StoryBricks 语音 / AI 网关
  *
- * 仅对接阿里云灵积 DashScope：
- * - 语音识别：兼容模式 qwen3-asr-flash（WAV Base64 Data URL）
- * - 对话：兼容模式通义（如 qwen-turbo）
- * - 语音合成：CosyVoice HTTP，拉取 wav URL 后转 base64 给 Unity
+ * 故事创作（推荐仅配 DEEPSEEK_API_KEY）：
+ * - 提问：DeepSeek 生成儿童化话术
+ * - TTS：Edge 免费语音（或 DashScope CosyVoice）
+ * - ASR：本机 Whisper + DeepSeek 整理孩子回答
  *
- * - GET  /health
- * - POST /api/tutor/text   JSON（可选：tutorialTutorOverview、stepGoal、stepPartsUsed、stepKeyActions、stepPitfalls）
- * - POST /api/tutor/voice  multipart/form-data，字段 audio（WAV）+ 同上文本字段
- *
- * 必填环境变量：DASHSCOPE_API_KEY
+ * 教程助教（可选 DASHSCOPE_API_KEY）：/api/tutor/*
  */
+require("dotenv").config();
+
 const http = require("http");
 const Busboy = require("busboy");
+const cfg = require("./lib/config");
+const deepseek = require("./lib/deepseek");
+const { ttsToAudioBase64 } = require("./lib/tts");
+const { transcribeWavBuffer, transcribeStoryCreationWavBuffer } = require("./lib/asr");
 
-const PORT = Number(process.env.PORT || 8787);
-
-const DASH_KEY = process.env.DASHSCOPE_API_KEY || "";
-const DASH_COMPAT = (process.env.DASHSCOPE_COMPAT_BASE || "https://dashscope.aliyuncs.com/compatible-mode/v1").replace(/\/$/, "");
-const DASH_ASR_MODEL = process.env.DASHSCOPE_ASR_MODEL || "qwen3-asr-flash";
-const DASH_CHAT_MODEL = process.env.DASHSCOPE_CHAT_MODEL || "qwen-turbo";
-const DASH_TTS_MODEL = process.env.DASHSCOPE_TTS_MODEL || "cosyvoice-v3-flash";
-const DASH_TTS_VOICE = process.env.DASHSCOPE_TTS_VOICE || "longanyang";
-const DASH_TTS_SAMPLE_RATE = Number(process.env.DASHSCOPE_TTS_SAMPLE_RATE || 24000);
+const PORT = cfg.PORT;
+const DASH_KEY = cfg.DASH_KEY;
+const DASH_COMPAT = cfg.DASH_COMPAT;
+const DASH_ASR_MODEL = cfg.DASH_ASR_MODEL;
+const DASH_CHAT_MODEL = cfg.DASH_CHAT_MODEL;
 
 function sendJson(res, status, obj) {
   const body = JSON.stringify(obj);
@@ -107,6 +105,18 @@ function dashKeyMissingResponse() {
   };
 }
 
+function storyKeyMissingResponse() {
+  return {
+    status: 503,
+    body: {
+      error: "请配置 DEEPSEEK_API_KEY（复制 .env.example 为 .env 并填写卡密）",
+      audioBase64: "",
+      transcript: "",
+      questions: [],
+    },
+  };
+}
+
 async function dashCompatFetch(path, body) {
   const url = `${DASH_COMPAT}${path.startsWith("/") ? path : "/" + path}`;
   const r = await fetch(url, {
@@ -183,59 +193,99 @@ async function runChat(systemPrompt, userText) {
 }
 
 async function transcribeFromWavBuffer(buffer) {
-  const b64 = buffer.toString("base64");
-  const dataUri = `data:audio/wav;base64,${b64}`;
-  const body = {
-    model: DASH_ASR_MODEL,
-    messages: [
-      {
-        role: "user",
-        content: [{ type: "input_audio", input_audio: { data: dataUri } }],
-      },
-    ],
-    stream: false,
-    asr_options: {
-      language: "zh",
-      enable_itn: true,
-    },
-  };
-  const { ok, status, text } = await dashCompatFetch("/chat/completions", body);
-  if (!ok) throw new Error(`dashscope asr HTTP ${status}: ${text.slice(0, 1200)}`);
-  const data = JSON.parse(text);
-  return (data?.choices?.[0]?.message?.content || "").trim();
+  const { transcript } = await transcribeWavBuffer(buffer, { refineWithDeepSeek: "false" });
+  return transcript;
 }
 
 async function ttsToWavBase64(inputText) {
-  const payload = {
-    model: DASH_TTS_MODEL,
-    input: {
-      text: inputText.slice(0, 2000),
-      voice: DASH_TTS_VOICE,
-      format: "wav",
-      sample_rate: DASH_TTS_SAMPLE_RATE,
-    },
-  };
+  const { audioBase64 } = await ttsToAudioBase64(inputText);
+  return audioBase64;
+}
 
-  const r = await fetch("https://dashscope.aliyuncs.com/api/v1/services/audio/tts/SpeechSynthesizer", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${DASH_KEY}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
+async function buildStoryCreationQuestions(body) {
+  if (deepseek.hasDeepSeek()) return deepseek.buildStoryCreationQuestions(body);
+
+  const gaps = Array.isArray(body.gaps) ? body.gaps : [];
+  if (gaps.length === 0) return [];
+  if (!cfg.hasDashScope()) throw new Error("请配置 DEEPSEEK_API_KEY");
+
+  const systemPrompt = buildStoryCreationQuestionPrompt(body);
+  const payload = {
+    model: DASH_CHAT_MODEL,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: "请为上述每个缺口各生成一条儿童化语音提问。" },
+    ],
+    temperature: 0.65,
+    max_tokens: 1200,
+  };
+  const { ok, status, text } = await dashCompatFetch("/chat/completions", payload);
+  if (!ok) throw new Error(`dashscope questions HTTP ${status}: ${text.slice(0, 800)}`);
+  const data = JSON.parse(text);
+  const raw = (data?.choices?.[0]?.message?.content || "").trim();
+  if (!raw) throw new Error("questions empty reply");
+
+  const jsonStart = raw.indexOf("[");
+  const jsonEnd = raw.lastIndexOf("]");
+  const slice = jsonStart >= 0 && jsonEnd > jsonStart ? raw.slice(jsonStart, jsonEnd + 1) : raw;
+  const parsed = JSON.parse(slice);
+  if (!Array.isArray(parsed)) throw new Error("questions not array");
+
+  return parsed
+    .filter((q) => q && String(q.text || "").trim())
+    .map((q, i) => ({
+      id: String(q.id || `gap_${i}`).trim(),
+      text: String(q.text).trim(),
+    }));
+}
+
+async function refineStoryCreationImagePrompt(body) {
+  if (deepseek.hasDeepSeek()) return deepseek.buildStoryCreationImagePrompt(body);
+  if (!cfg.hasDashScope()) throw new Error("请配置 DEEPSEEK_API_KEY");
+
+  const messages = deepseek.buildStoryCreationImagePromptMessages(body);
+  const payload = {
+    model: DASH_CHAT_MODEL,
+    messages,
+    temperature: 0.45,
+    max_tokens: 600,
+  };
+  const { ok, status, text } = await dashCompatFetch("/chat/completions", payload);
+  if (!ok) throw new Error(`dashscope refine-prompt HTTP ${status}: ${text.slice(0, 800)}`);
+  const data = JSON.parse(text);
+  const raw = (data?.choices?.[0]?.message?.content || "").trim();
+  if (!raw) throw new Error("refine-prompt empty reply");
+  return raw.replace(/^["'「]|["'」]$/g, "").trim();
+}
+
+function buildStoryCreationQuestionPrompt(body) {
+  const storyTitle = String(body.storyTitle || "故事").trim();
+  const pageTitle = String(body.pageTitle || "").trim();
+  const scene = String(body.sceneGuideText || "").trim();
+  const previous = String(body.previousSummary || "").trim();
+  const gaps = Array.isArray(body.gaps) ? body.gaps : [];
+
+  let gapBlock = "";
+  gaps.forEach((g, i) => {
+    const kind = String(g.kind || "").trim();
+    const role = String(g.roleName || "").trim();
+    const fb = String(g.fallbackQuestion || "").trim();
+    gapBlock += `${i + 1}. 类型=${kind || "未知"}；角色=${role || "无"}；参考话术=${fb || "无"}\n`;
   });
 
-  const raw = await r.text();
-  if (!r.ok) throw new Error(`cosyvoice HTTP ${r.status}: ${raw.slice(0, 800)}`);
-
-  const data = JSON.parse(raw);
-  const audioUrl = data?.output?.audio?.url;
-  if (!audioUrl) throw new Error(`cosyvoice no audio url: ${raw.slice(0, 400)}`);
-
-  const wavR = await fetch(audioUrl);
-  if (!wavR.ok) throw new Error(`download wav HTTP ${wavR.status}`);
-  const buf = Buffer.from(await wavR.arrayBuffer());
-  return buf.toString("base64");
+  return `你是 3～8 岁儿童故事创作的「语音小老师」，负责用口语提问补全孩子搭建时缺少的信息。
+规则：
+- 根据「故事」「本页场景」「前情」「识别缺口」生成提问，每条 2～3 句，亲切、简短，可用「小朋友」「老师」称呼，结尾邀请孩子开口回答。
+- 缺口类型 CharacterBehavior：本页已识别的角色，问孩子这个角色在做什么、想干什么（行为只靠语音，不从积木识别）。
+- 缺口类型 OptionalStoryElement：行为问完后固定追问本页还想加什么；若提供了参考话术，可略作口语化但保持原意。
+- 结合前情与场景举例（如龟兔 P2 大树下可问兔子想休息还是玩耍），但不要编造与场景矛盾的剧情。
+- 只输出 JSON 数组，不要 markdown，不要解释。格式：[{"id":"gap_0","text":"提问内容"}]，id 按缺口顺序 gap_0、gap_1…
+故事：${storyTitle}
+本页：${pageTitle}
+场景说明：${scene || "（无）"}
+前情摘要：${previous || "（首页无前情）"}
+识别缺口：
+${gapBlock || "（无缺口）"}`;
 }
 
 const server = http.createServer(async (req, res) => {
@@ -255,7 +305,11 @@ const server = http.createServer(async (req, res) => {
   if (req.method === "GET" && path === "/health") {
     sendJson(res, 200, {
       ok: true,
-      hasDashScopeKey: Boolean(DASH_KEY),
+      hasDeepSeekKey: cfg.hasDeepSeek(),
+      hasDashScopeKey: cfg.hasDashScope(),
+      ttsProvider: cfg.TTS_PROVIDER,
+      asrProvider: cfg.ASR_PROVIDER,
+      deepseekModel: cfg.DEEPSEEK_MODEL,
       dashCompatBase: DASH_COMPAT,
     });
     return;
@@ -263,6 +317,12 @@ const server = http.createServer(async (req, res) => {
 
   if (!DASH_KEY && (path === "/api/tutor/text" || path === "/api/tutor/voice")) {
     const err = dashKeyMissingResponse();
+    sendJson(res, err.status, err.body);
+    return;
+  }
+
+  if (path.startsWith("/api/story-creation/") && !cfg.storyCreationReady()) {
+    const err = storyKeyMissingResponse();
     sendJson(res, err.status, err.body);
     return;
   }
@@ -332,6 +392,57 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "POST" && path === "/api/story-creation/tts") {
+      const body = await readJsonBody(req);
+      const text = String((body && body.text) || "").trim();
+      if (!text) {
+        sendJson(res, 400, { audioBase64: "", audioFormat: "wav", error: "text required" });
+        return;
+      }
+      const { audioBase64, audioFormat } = await ttsToAudioBase64(text);
+      sendJson(res, 200, { audioBase64, audioFormat: audioFormat || "wav", error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/asr") {
+      const ct = (req.headers["content-type"] || "").toLowerCase();
+      if (!ct.includes("multipart/form-data")) {
+        sendJson(res, 400, { transcript: "", rawTranscript: "", error: "Content-Type must be multipart/form-data" });
+        return;
+      }
+      const { fields, audioBuffer } = await parseVoiceMultipart(req);
+      if (!audioBuffer || audioBuffer.length === 0) {
+        sendJson(res, 400, { transcript: "", rawTranscript: "", error: "missing audio file field" });
+        return;
+      }
+      const { transcript, rawTranscript } = await transcribeStoryCreationWavBuffer(audioBuffer, fields || {});
+      if (!transcript) {
+        sendJson(res, 400, { transcript: "", rawTranscript: rawTranscript || "", error: "empty transcription" });
+        return;
+      }
+      sendJson(res, 200, { transcript, rawTranscript: rawTranscript || transcript, error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/questions") {
+      const body = await readJsonBody(req);
+      const gaps = Array.isArray(body.gaps) ? body.gaps : [];
+      if (gaps.length === 0) {
+        sendJson(res, 200, { questions: [], error: "" });
+        return;
+      }
+      const questions = await buildStoryCreationQuestions(body);
+      sendJson(res, 200, { questions, error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/refine-prompt") {
+      const body = await readJsonBody(req);
+      const prompt = await refineStoryCreationImagePrompt(body || {});
+      sendJson(res, 200, { prompt, error: "" });
+      return;
+    }
+
     sendJson(res, 404, { error: "not found" });
   } catch (e) {
     console.error(e);
@@ -344,6 +455,14 @@ const server = http.createServer(async (req, res) => {
       });
     } else if (path === "/api/tutor/text") {
       sendJson(res, 500, { reply: "", error: String(e.message || e) });
+    } else if (path.startsWith("/api/story-creation/")) {
+      sendJson(res, 500, {
+        audioBase64: "",
+        transcript: "",
+        questions: [],
+        prompt: "",
+        error: String(e.message || e),
+      });
     } else {
       sendJson(res, 500, { error: String(e.message || e) });
     }
@@ -351,6 +470,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`StoryBricks tutor gateway (DashScope) http://127.0.0.1:${PORT}`);
-  console.log(`DASH_COMPAT=${DASH_COMPAT} hasDashKey=${Boolean(DASH_KEY)}`);
+  console.log(`StoryBricks tutor gateway http://127.0.0.1:${PORT}`);
+  console.log(`DeepSeek=${cfg.hasDeepSeek()} model=${cfg.DEEPSEEK_MODEL} DashScope=${cfg.hasDashScope()}`);
+  console.log(`TTS=${cfg.TTS_PROVIDER} ASR=${cfg.ASR_PROVIDER}`);
 });

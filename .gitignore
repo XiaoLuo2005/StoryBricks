@@ -12,6 +12,10 @@
 #
 /Server/storybricks-tutor-gateway/node_modules/
 
+# Local server secrets — use .env.example as template
+Server/storybricks-image-gen-web/.env
+Server/storybricks-tutor-gateway/.env
+
 /[Ll]ibrary/
 /[Tt]emp/
 /[Oo]bj/

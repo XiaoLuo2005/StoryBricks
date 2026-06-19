@@ -11,6 +11,7 @@ public static class StorySelectionContext
     public static Sprite[] ProloguePages { get; private set; }
     public static StoryDefinition.StoryPageDefinition[] CreationPages { get; private set; }
     public static StoryDefinition.CharacterReferenceEntry[] CharacterReferences { get; private set; }
+    public static StoryMarkerTaxonomy MarkerTaxonomy { get; private set; } = StoryMarkerTaxonomy.Default;
     public static string StylePromptPrefix { get; private set; } = "";
     public static string CreationSceneName { get; private set; } = "";
     public static BrickPortfolioRoot.BrickWorkItem[] Works { get; private set; }
@@ -40,6 +41,7 @@ public static class StorySelectionContext
         CharacterReferences = def.characterReferences != null && def.characterReferences.Length > 0
             ? def.characterReferences
             : null;
+        MarkerTaxonomy = StoryMarkerTaxonomy.FromStory(def);
         StylePromptPrefix = def.stylePromptPrefix ?? "";
         CreationSceneName = def.creationSceneName ?? "";
         StoryWorksSceneName = string.IsNullOrWhiteSpace(def.storyWorksSceneName)
@@ -93,6 +95,7 @@ public static class StorySelectionContext
         ProloguePages = null;
         CreationPages = null;
         CharacterReferences = null;
+        MarkerTaxonomy = StoryMarkerTaxonomy.Default;
         StylePromptPrefix = "";
         CreationSceneName = "";
         Works = Array.Empty<BrickPortfolioRoot.BrickWorkItem>();

@@ -15,6 +15,8 @@ public static class StoryBricksBuildSettings
         "Assets/Scenes/StoryPrologue.unity",
         "Assets/Scenes/StoryWorks.unity",
         "Assets/Scenes/StoryCreation.unity",
+        "Assets/Scenes/CompletedStoryLibrary 1.unity",
+        "Assets/Scenes/CompletedStoryViewer 1.unity",
         "Assets/Scenes/BrickLibrary.unity",
         "Assets/Scenes/RabbitTutorial.unity",
         "Assets/Scenes/ToitorseTutorial.unity",

@@ -55,6 +55,10 @@ public class StoryDefinition : ScriptableObject
 
         [Tooltip("本页期望出现的角色 ArUco ID（1–20）；留空表示不校验")]
         public int[] requiredCharacterIds;
+
+        [TextArea(2, 4)]
+        [Tooltip("问完各角色行为后，固定再问一条「还想加什么」；留空则跳过。")]
+        public string optionalElementQuestion = "";
     }
 
     public string storyId = "story_id";
@@ -71,7 +75,10 @@ public class StoryDefinition : ScriptableObject
     [Tooltip("本故事包含的积木作品（如龟兔赛跑：兔子 + 乌龟）")]
     public StoryBrickWorkEntry[] works;
 
-    [Header("分页故事创作")]
+    [Header("分页故事创作 / ArUco 角色分区")]
+    public int characterMarkerMin = 1;
+    public int characterMarkerMax = 20;
+
     [Tooltip("ArUco ID → 角色标准形象，供 img2img 锁定外貌")]
     public CharacterReferenceEntry[] characterReferences;
 

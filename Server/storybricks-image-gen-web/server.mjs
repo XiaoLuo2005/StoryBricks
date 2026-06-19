@@ -36,8 +36,14 @@ function loadDotEnv(filePath) {
     if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
       val = val.slice(1, -1);
     }
-    if (!process.env[key]) process.env[key] = val;
+    // 本地 .env 优先于系统/终端里已有的同名变量（避免 Windows 用户环境变量覆盖项目 .env）
+    process.env[key] = val;
   }
+}
+
+function dashKeySuffix() {
+  const key = (process.env.DASHSCOPE_API_KEY || "").trim();
+  return key.length >= 6 ? key.slice(-6) : "";
 }
 
 function readBody(req) {
@@ -86,6 +92,7 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       service: "storybricks-image-gen",
       has_api_key: !!(process.env.DASHSCOPE_API_KEY || "").trim(),
+      dashscope_key_suffix: dashKeySuffix(),
       supports_reference_images: true,
     });
     return;
@@ -135,8 +142,9 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`StoryBricks image-gen server: http://${HOST}:${PORT}/generate`);
   console.log(`Health: http://${HOST}:${PORT}/health`);
-  if ((process.env.DASHSCOPE_API_KEY || "").trim()) {
-    console.log("DASHSCOPE_API_KEY: configured");
+  const suffix = dashKeySuffix();
+  if (suffix) {
+    console.log(`DASHSCOPE_API_KEY: configured (…${suffix}, from .env)`);
   } else {
     console.warn("WARNING: DASHSCOPE_API_KEY not set — all /generate requests will fail.");
   }

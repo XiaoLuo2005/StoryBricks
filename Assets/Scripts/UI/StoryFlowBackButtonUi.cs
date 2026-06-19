@@ -67,6 +67,59 @@ public static class StoryFlowBackButtonUi
         return btn;
     }
 
+    public static Button EnsureTopRight(Canvas canvas, string label, string sceneName)
+    {
+        return EnsureTopRight(canvas, "ExitButton", label, sceneName);
+    }
+
+    public static Button EnsureTopRight(Canvas canvas, string objectName, string label, string sceneName)
+    {
+        if (canvas == null || string.IsNullOrWhiteSpace(sceneName))
+            return null;
+
+        var canvasRt = canvas.GetComponent<RectTransform>();
+        var existing = canvasRt.Find(objectName);
+        if (existing != null)
+        {
+            var existingBtn = existing.GetComponent<Button>();
+            if (existingBtn != null)
+            {
+                LayoutTopRight(existing.GetComponent<RectTransform>());
+                Wire(existingBtn, label, sceneName);
+                existing.SetAsLastSibling();
+                return existingBtn;
+            }
+        }
+
+        var go = new GameObject(objectName, typeof(RectTransform));
+        go.layer = LayerMask.NameToLayer("UI");
+        var rt = go.GetComponent<RectTransform>();
+        rt.SetParent(canvasRt, false);
+        LayoutTopRight(rt);
+        rt.sizeDelta = new Vector2(ButtonWidth, ButtonHeight);
+
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(235, 238, 245, 255);
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        var textGo = new GameObject("Label", typeof(RectTransform));
+        textGo.layer = LayerMask.NameToLayer("UI");
+        var textRt = textGo.GetComponent<RectTransform>();
+        textRt.SetParent(rt, false);
+        StretchFull(textRt);
+        var text = textGo.AddComponent<Text>();
+        text.font = BuiltinUIFont;
+        text.fontSize = 26;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = new Color32(40, 44, 52, 255);
+        text.text = label;
+
+        go.transform.SetAsLastSibling();
+        Wire(btn, label, sceneName);
+        return btn;
+    }
+
     static void LayoutTopLeft(RectTransform rt, int columnIndex)
     {
         rt.anchorMin = new Vector2(0f, 1f);
@@ -75,6 +128,14 @@ public static class StoryFlowBackButtonUi
         rt.anchoredPosition = new Vector2(
             Margin + columnIndex * (ButtonWidth + ButtonSpacing),
             -Margin);
+    }
+
+    static void LayoutTopRight(RectTransform rt)
+    {
+        rt.anchorMin = new Vector2(1f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(1f, 1f);
+        rt.anchoredPosition = new Vector2(-Margin, -Margin);
     }
 
     static void Wire(Button btn, string label, string sceneName)

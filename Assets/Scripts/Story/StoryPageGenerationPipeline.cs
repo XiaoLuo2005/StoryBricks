@@ -97,7 +97,8 @@ public static class StoryPageGenerationPipeline
 
         if (detectedIds != null && catalog != null)
         {
-            foreach (int id in detectedIds)
+            var taxonomy = StoryMarkerTaxonomy.Default;
+            foreach (int id in taxonomy.FilterCharacterIds(detectedIds))
             {
                 if (textures.Count >= MaxReferenceImages)
                     break;
@@ -145,67 +146,183 @@ public static class StoryPageGenerationPipeline
         bundle.temporaryTextures.Clear();
     }
 
-    public static string BuildGenerationPrompt(
+    /// <summary>生图前各来源的原始文本，供 AI 整理或本地 fallback 拼接。</summary>
+    public struct PromptInputBundle
+    {
+        public string storyTitle;
+        public string stylePromptPrefix;
+        public string pageTitle;
+        public string sceneGuideText;
+        public string previousSummary;
+        public string voiceSupplement;
+        public bool isContinuationPage;
+        /// <summary>如「参考图1的兔子外貌、图2的乌龟外貌，生成儿童绘本插画。」</summary>
+        public string referenceImageClause;
+        public string detectedRolesDescription;
+    }
+
+    public static PromptInputBundle CollectPromptInputs(
         StoryDefinition.StoryPageDefinition page,
         StoryDefinition.CharacterReferenceEntry[] catalog,
         IReadOnlyList<int> detectedIds,
         string stylePromptPrefix,
-        ReferenceBundle references)
+        ReferenceBundle references,
+        string voiceSupplement = "")
     {
-        var sb = new StringBuilder();
+        var taxonomy = StoryMarkerTaxonomy.Default;
+        var characterIds = taxonomy.FilterCharacterIds(detectedIds);
+        var roleNames = new List<string>();
 
-        if (!string.IsNullOrWhiteSpace(stylePromptPrefix))
-        {
-            sb.Append(stylePromptPrefix.Trim());
-            sb.Append('。');
-        }
-
-        sb.Append("参考");
+        var sbRef = new StringBuilder();
+        sbRef.Append("参考");
         var roleParts = new List<string>();
-        if (detectedIds != null && catalog != null)
+        if (characterIds != null && catalog != null)
         {
-            foreach (int id in detectedIds)
+            foreach (int id in characterIds)
             {
                 var entry = FindCharacterEntry(catalog, id);
                 if (entry?.referenceSprite == null)
                     continue;
                 string role = string.IsNullOrWhiteSpace(entry.roleName) ? $"角色{id}" : entry.roleName.Trim();
+                roleNames.Add(role);
                 roleParts.Add($"图{roleParts.Count + 1}的{role}外貌");
             }
         }
 
         if (roleParts.Count > 0)
-            sb.Append(string.Join("、", roleParts));
+            sbRef.Append(string.Join("、", roleParts));
 
         if (references.hasAnchor)
         {
             if (roleParts.Count > 0)
-                sb.Append('、');
-            sb.Append($"图{roleParts.Count + 1}的绘本画风");
+                sbRef.Append('、');
+            sbRef.Append($"图{roleParts.Count + 1}的绘本画风与色调（仅作风格参考，不得复制其场景构图）");
         }
 
-        sb.Append("，生成儿童绘本插画。");
+        sbRef.Append("，生成儿童绘本插画。");
 
-        if (page != null)
+        return new PromptInputBundle
         {
-            if (!string.IsNullOrWhiteSpace(page.pageTitle))
-                sb.Append($"本页场景：{page.pageTitle.Trim()}。");
-            if (!string.IsNullOrWhiteSpace(page.sceneGuideText))
-                sb.Append(page.sceneGuideText.Trim());
-            if (!string.IsNullOrWhiteSpace(page.sceneGuideText) &&
-                !page.sceneGuideText.TrimEnd().EndsWith("。") &&
-                !page.sceneGuideText.TrimEnd().EndsWith("！") &&
-                !page.sceneGuideText.TrimEnd().EndsWith("?") &&
-                !page.sceneGuideText.TrimEnd().EndsWith("？"))
-                sb.Append('。');
+            storyTitle = StorySessionCache.StoryTitle ?? "",
+            stylePromptPrefix = stylePromptPrefix ?? "",
+            pageTitle = page?.pageTitle ?? "",
+            sceneGuideText = page?.sceneGuideText ?? "",
+            previousSummary = StorySessionCache.BuildPreviousPagesSummary(),
+            voiceSupplement = voiceSupplement ?? "",
+            isContinuationPage = StorySessionCache.CompletedPages.Count > 0,
+            referenceImageClause = sbRef.ToString(),
+            detectedRolesDescription = roleNames.Count > 0 ? string.Join("、", roleNames) : "",
+        };
+    }
+
+    /// <summary>AI 整理失败时的本地拼接（与旧版 BuildGenerationPrompt 行为一致）。</summary>
+    public static string BuildLocalGenerationPrompt(PromptInputBundle bundle)
+    {
+        var sb = new StringBuilder();
+
+        if (!string.IsNullOrWhiteSpace(bundle.stylePromptPrefix))
+        {
+            sb.Append(bundle.stylePromptPrefix.Trim());
+            sb.Append('。');
         }
 
-        string previous = StorySessionCache.BuildPreviousPagesSummary();
-        if (!string.IsNullOrWhiteSpace(previous))
-            sb.Append("前情：").Append(previous.Trim()).Append('。');
+        if (!string.IsNullOrWhiteSpace(bundle.referenceImageClause))
+            sb.Append(bundle.referenceImageClause.Trim());
 
-        sb.Append("角色外貌必须与参考图一致，柔和水彩绘本风格，横版构图，无文字无水印。");
+        if (bundle.isContinuationPage)
+        {
+            sb.Append("这是故事续页，必须绘制与前面页面完全不同的新场景：");
+            sb.Append("更换背景环境、角色站位与动作，严禁重复上一页的画面布局。");
+        }
+
+        if (!string.IsNullOrWhiteSpace(bundle.pageTitle))
+            sb.Append($"本页场景：{bundle.pageTitle.Trim()}。");
+
+        if (!string.IsNullOrWhiteSpace(bundle.sceneGuideText))
+        {
+            sb.Append(bundle.sceneGuideText.Trim());
+            AppendSentenceEndIfNeeded(sb, bundle.sceneGuideText);
+        }
+
+        if (!string.IsNullOrWhiteSpace(bundle.previousSummary))
+            sb.Append("前情：").Append(bundle.previousSummary.Trim()).Append('。');
+
+        if (!string.IsNullOrWhiteSpace(bundle.voiceSupplement))
+            sb.Append("儿童语音补充：").Append(bundle.voiceSupplement.Trim()).Append('。');
+
+        sb.Append(HardConstraintsSuffix);
         return sb.ToString();
+    }
+
+    const string HardConstraintsSuffix =
+        "角色外貌必须与参考图一致，柔和水彩绘本风格，横版构图，无文字无水印。";
+
+    /// <summary>将 AI 整理后的场景描述与参考图说明、硬性约束合并为最终生图 Prompt。</summary>
+    public static string AssembleFinalPrompt(PromptInputBundle bundle, string aiRefinedSceneText)
+    {
+        if (string.IsNullOrWhiteSpace(aiRefinedSceneText))
+            return BuildLocalGenerationPrompt(bundle);
+
+        var sb = new StringBuilder();
+        if (!string.IsNullOrWhiteSpace(bundle.referenceImageClause))
+            sb.Append(bundle.referenceImageClause.Trim());
+
+        string scene = StripDuplicateReferencePreface(aiRefinedSceneText, bundle.referenceImageClause);
+        sb.Append(scene);
+        AppendSentenceEndIfNeeded(sb, scene);
+        sb.Append(HardConstraintsSuffix);
+        return sb.ToString();
+    }
+
+    /// <summary>AI 常会重复输出「参考图…生成儿童绘本插画」，与句首 referenceImageClause 去重。</summary>
+    static string StripDuplicateReferencePreface(string aiText, string referenceClause)
+    {
+        if (string.IsNullOrWhiteSpace(aiText))
+            return "";
+
+        var t = aiText.Trim();
+        var clause = referenceClause?.Trim() ?? "";
+        if (!string.IsNullOrEmpty(clause) &&
+            t.StartsWith(clause, System.StringComparison.Ordinal))
+        {
+            t = t.Substring(clause.Length).TrimStart();
+        }
+
+        const string tail = "生成儿童绘本插画。";
+        while (t.StartsWith("参考图", System.StringComparison.Ordinal))
+        {
+            int end = t.IndexOf(tail, System.StringComparison.Ordinal);
+            if (end < 0)
+                break;
+            string next = t.Substring(end + tail.Length).TrimStart();
+            if (next.Length >= t.Length)
+                break;
+            t = next;
+        }
+
+        return t;
+    }
+
+    static void AppendSentenceEndIfNeeded(StringBuilder sb, string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return;
+        string t = text.TrimEnd();
+        if (t.EndsWith("。") || t.EndsWith("！") || t.EndsWith("?") || t.EndsWith("？"))
+            return;
+        sb.Append('。');
+    }
+
+    public static string BuildGenerationPrompt(
+        StoryDefinition.StoryPageDefinition page,
+        StoryDefinition.CharacterReferenceEntry[] catalog,
+        IReadOnlyList<int> detectedIds,
+        string stylePromptPrefix,
+        ReferenceBundle references,
+        string voiceSupplement = "")
+    {
+        var bundle = CollectPromptInputs(page, catalog, detectedIds, stylePromptPrefix, references, voiceSupplement);
+        return BuildLocalGenerationPrompt(bundle);
     }
 
     static StoryDefinition.CharacterReferenceEntry FindCharacterEntry(
