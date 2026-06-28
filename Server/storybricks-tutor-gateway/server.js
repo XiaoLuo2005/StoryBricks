@@ -164,9 +164,10 @@ function buildSystemPrompt(body) {
   const structuredBlock = formatStructuredStep(body);
   const hint = (body.stepHint || "").trim();
   const hintBlock = hint ? `本步简短提示（可与上文并用；以步骤图为准，勿编造细节）：\n${hint}\n` : "";
-  return `你是儿童积木拼装教程里的「语音小助教」，昵称友好、句子短（每次回答控制在 2～5 句中文口语）。
+  return `你是儿童积木拼装教程里的语音助手「乐乐」，自称「乐乐」，句子短（每次回答控制在 2～5 句中文口语）。
 规则：
 - 只围绕当前教程「${title}」与拼装步骤回答问题；拒绝无关话题与危险操作。
+- 孩子需先说「你好乐乐」唤醒你；未被唤醒时不要主动长篇大论。
 - 若上文包含「教程总览」或「本步结构化说明」，必须在其范围内讲解；不要编造未出现的零件编号或步骤图上未体现的具体孔位。
 - 具体卡扣位置、孔位若说明与步骤图均未写明，不要编造；请引导孩子对照屏幕上的步骤图、必要时用「上一页/下一页」回看。
 ${overviewBlock}${structuredBlock}${hintBlock}
@@ -273,10 +274,11 @@ function buildStoryCreationQuestionPrompt(body) {
     gapBlock += `${i + 1}. 类型=${kind || "未知"}；角色=${role || "无"}；参考话术=${fb || "无"}\n`;
   });
 
-  return `你是 3～8 岁儿童故事创作的「语音小老师」，负责用口语提问补全孩子搭建时缺少的信息。
+  return `你是 3～8 岁儿童故事创作的语音助手「乐乐」，负责用口语提问补全孩子搭建时缺少的信息。
 规则：
-- 根据「故事」「本页场景」「前情」「识别缺口」生成提问，每条 2～3 句，亲切、简短，可用「小朋友」「老师」称呼，结尾邀请孩子开口回答。
+- 根据「故事」「本页场景」「前情」「识别缺口」生成提问，每条 2～3 句，亲切、简短，自称「乐乐」，称呼孩子「小朋友」，直接邀请孩子开口回答（不要说唤醒词「你好乐乐」）。
 - 缺口类型 CharacterBehavior：本页已识别的角色，问孩子这个角色在做什么、想干什么（行为只靠语音，不从积木识别）。
+- 缺口类型 CharacterPosition：多个角色已在镜头里，问谁在前谁在后、离场景中心（大树/终点等）远近，或要不要调整站位。
 - 缺口类型 OptionalStoryElement：行为问完后固定追问本页还想加什么；若提供了参考话术，可略作口语化但保持原意。
 - 结合前情与场景举例（如龟兔 P2 大树下可问兔子想休息还是玩耍），但不要编造与场景矛盾的剧情。
 - 只输出 JSON 数组，不要 markdown，不要解释。格式：[{"id":"gap_0","text":"提问内容"}]，id 按缺口顺序 gap_0、gap_1…
@@ -440,6 +442,60 @@ const server = http.createServer(async (req, res) => {
       const body = await readJsonBody(req);
       const prompt = await refineStoryCreationImagePrompt(body || {});
       sendJson(res, 200, { prompt, error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/reply") {
+      const body = await readJsonBody(req);
+      const result = await deepseek.buildStoryCreationReply(body || {});
+      sendJson(res, 200, { ...result, error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/summary") {
+      const body = await readJsonBody(req);
+      const summary = await deepseek.buildStoryCreationPageSummary(body || {});
+      sendJson(res, 200, { summary: summary || "", error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/page-caption") {
+      const body = await readJsonBody(req);
+      const caption = await deepseek.buildStoryCreationPageCaption(body || {});
+      sendJson(res, 200, { caption: caption || "", error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/free-chat") {
+      const body = await readJsonBody(req);
+      const um = String((body && body.userMessage) || "").trim();
+      if (!um) {
+        sendJson(res, 400, { reply: "", error: "userMessage required" });
+        return;
+      }
+      const reply = await deepseek.buildStoryCreationFreeChat(body || {});
+      sendJson(res, 200, { reply, error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/wait-narration") {
+      const body = await readJsonBody(req);
+      const narration = await deepseek.buildStoryCreationWaitNarration(body || {});
+      sendJson(res, 200, { narration: narration || "", error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/page-recap") {
+      const body = await readJsonBody(req);
+      const recap = await deepseek.buildStoryCreationPageRecap(body || {});
+      sendJson(res, 200, { recap: recap || "", error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/branch-hint") {
+      const body = await readJsonBody(req);
+      const hint = await deepseek.buildStoryCreationBranchHint(body || {});
+      sendJson(res, 200, { hint: hint || "", error: "" });
       return;
     }
 

@@ -9,7 +9,7 @@ public class TutorialStepsConfig : ScriptableObject
     [Tooltip("按顺序排列的步骤图")]
     public Sprite[] steps;
 
-    [Tooltip("与 steps 等长时可一一对应；某步无文案可留空。会发给 AI 助教作为本步提示")]
+    [Tooltip("与 steps 等长时可一一对应；某步无文案可留空。会发给乐乐作为本步提示")]
     public string[] stepHints;
 
     [Tooltip("可选；与 steps 等长。每步目标、零件、动作、易错点——比纯 stepHints 更利于模型理解")]

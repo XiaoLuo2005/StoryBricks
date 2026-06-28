@@ -26,6 +26,7 @@ public static class StorySessionCache
     static string _storyId = "";
     static string _storyTitle = "";
     static int _currentPageIndex;
+    static string _nextPageSceneHint = "";
     static Texture2D _anchorPageTexture;
     static readonly List<PageRecord> _completedPages = new List<PageRecord>();
     static readonly List<Texture2D> _pageTextures = new List<Texture2D>();
@@ -38,11 +39,31 @@ public static class StorySessionCache
 
     public static bool HasActiveSession => !string.IsNullOrWhiteSpace(_storyId);
 
+    /// <summary>上一页对话推断的下一页情境补充（故事分支）。</summary>
+    public static string NextPageSceneHint => _nextPageSceneHint ?? "";
+
+    public static void SetNextPageSceneHint(string hint)
+    {
+        _nextPageSceneHint = hint?.Trim() ?? "";
+    }
+
+    public static void ConsumeNextPageSceneHint()
+    {
+        _nextPageSceneHint = "";
+    }
+
+    /// <summary>到目前为止的完整故事叙述（供页末小结）。</summary>
+    public static string BuildStorySoFarNarrative()
+    {
+        return BuildPreviousPagesSummary();
+    }
+
     public static void BeginSession(string storyId, string storyTitle)
     {
         _storyId = storyId ?? "";
         _storyTitle = storyTitle ?? "";
         _currentPageIndex = 0;
+        _nextPageSceneHint = "";
         _completedPages.Clear();
         ClearPageTextures();
         ClearAnchorPageTexture();
@@ -135,6 +156,7 @@ public static class StorySessionCache
         _storyId = "";
         _storyTitle = "";
         _currentPageIndex = 0;
+        _nextPageSceneHint = "";
         _completedPages.Clear();
         ClearPageTextures();
         ClearAnchorPageTexture();

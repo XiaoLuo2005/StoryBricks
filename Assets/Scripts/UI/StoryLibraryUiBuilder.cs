@@ -43,13 +43,37 @@ public static class StoryLibraryUiBuilder
 
     public static BuiltUi Build(BuildOptions options)
     {
-        options ??= new BuildOptions();
-        EnsureEventSystem();
-        EnsureMainCamera();
-        EnsureSceneDecor(options.useStoryLibraryTitleBanner);
+        var pageView = BuildPageView(null, options);
+        if (pageView == null)
+            return null;
 
-        var canvasGo = new GameObject("Canvas", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
+        return new BuiltUi
+        {
+            Canvas = pageView.canvas,
+            HeaderTitle = pageView.headerTitle,
+            ScrollRect = pageView.scrollRect,
+            CardListContent = pageView.cardListContent,
+            EmptyHint = pageView.emptyHint,
+        };
+    }
+
+    /// <summary>生成带 StoryLibraryPageView 的 Canvas，供 Prefab / 场景可视化编辑。</summary>
+    public static StoryLibraryPageView BuildPageView(Transform parent, BuildOptions options)
+    {
+        options ??= new BuildOptions();
+        if (Application.isPlaying)
+        {
+            EnsureEventSystem();
+            EnsureMainCamera();
+        }
+
+        var decorRoot = EnsureSceneDecorRoot(options.useStoryLibraryTitleBanner);
+
+        var canvasGo = new GameObject("CompletedStoryLibraryCanvas", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
         canvasGo.layer = LayerMask.NameToLayer("UI");
+        if (parent != null)
+            canvasGo.transform.SetParent(parent, false);
+
         var canvas = canvasGo.GetComponent<Canvas>();
         canvas.renderMode = RenderMode.ScreenSpaceOverlay;
 
@@ -58,6 +82,10 @@ public static class StoryLibraryUiBuilder
         scaler.referenceResolution = new Vector2(1920f, 1080f);
         scaler.matchWidthOrHeight = 0.5f;
         Stretch(canvasGo.GetComponent<RectTransform>());
+
+        var view = canvasGo.AddComponent<StoryLibraryPageView>();
+        view.canvas = canvas;
+        view.decorRoot = decorRoot;
 
         TextMeshProUGUI headerTmp = null;
         if (!options.useStoryLibraryTitleBanner)
@@ -80,6 +108,8 @@ public static class StoryLibraryUiBuilder
             headerTmp.outlineWidth = 0.22f;
             headerTmp.outlineColor = Color.white;
         }
+
+        view.headerTitle = headerTmp;
 
         var scroll = Child(canvas.transform, "ScrollView");
         var scrollRt = scroll.GetComponent<RectTransform>();
@@ -112,6 +142,8 @@ public static class StoryLibraryUiBuilder
 
         scrollRect.viewport = viewport.GetComponent<RectTransform>();
         scrollRect.content = contentRt;
+        view.scrollRect = scrollRect;
+        view.cardListContent = contentRt;
 
         GameObject emptyHintGo = null;
         if (!string.IsNullOrWhiteSpace(options.emptyHint))
@@ -135,14 +167,39 @@ public static class StoryLibraryUiBuilder
             emptyHintGo.SetActive(false);
         }
 
-        return new BuiltUi
-        {
-            Canvas = canvas,
-            HeaderTitle = headerTmp,
-            ScrollRect = scrollRect,
-            CardListContent = contentRt,
-            EmptyHint = emptyHintGo,
-        };
+        view.emptyHint = emptyHintGo;
+        view.backButton = CreateBackButton(canvas.transform);
+
+        return view;
+    }
+
+    static Button CreateBackButton(Transform canvasTransform)
+    {
+        var go = Child(canvasTransform, "BackButton");
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = new Vector2(28f, -28f);
+        rt.sizeDelta = new Vector2(200f, 72f);
+
+        var img = go.AddComponent<Image>();
+        TutorialUiArt.ApplyButtonBackground(img);
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        var labelGo = Child(go.transform, "Label");
+        Stretch(labelGo.GetComponent<RectTransform>());
+        var tmp = labelGo.AddComponent<TextMeshProUGUI>();
+        var font = LoadTitleFont();
+        if (font != null)
+            tmp.font = font;
+        tmp.text = "← 返回";
+        tmp.fontSize = 28;
+        tmp.alignment = TextAlignmentOptions.Center;
+        tmp.color = TutorialUiArt.TitleBrown;
+
+        return btn;
     }
 
     public static StoryCardView LoadCardPrefab()
@@ -196,14 +253,26 @@ public static class StoryLibraryUiBuilder
         cam.farClipPlane = 1000f;
     }
 
+    /// <summary>在场景里创建 StoryLibraryDecor（若尚未存在），可在 Scene 视图拖拽背景。</summary>
+    public static Transform EnsureSceneDecorVisible(bool useStoryLibraryTitleBanner = false)
+    {
+        return EnsureSceneDecorRoot(useStoryLibraryTitleBanner);
+    }
+
     static void EnsureSceneDecor(bool useStoryLibraryTitleBanner)
+    {
+        EnsureSceneDecorRoot(useStoryLibraryTitleBanner);
+    }
+
+    static Transform EnsureSceneDecorRoot(bool useStoryLibraryTitleBanner)
     {
         var legacy = GameObject.Find("StoryLibraryBackground");
         if (legacy != null)
             Object.Destroy(legacy);
 
-        if (GameObject.Find("StoryLibraryDecor") != null)
-            return;
+        var existing = GameObject.Find("StoryLibraryDecor");
+        if (existing != null)
+            return existing.transform;
 
         var root = new GameObject("StoryLibraryDecor");
 
@@ -231,6 +300,8 @@ public static class StoryLibraryUiBuilder
                     1);
             }
         }
+
+        return root.transform;
     }
 
     static void SpawnSprite(

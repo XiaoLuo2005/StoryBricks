@@ -15,6 +15,8 @@ public static class StoryBricksSetupCompletedStories
         EnsureRuntimeResources();
         SetupScene(LibraryScenePath, typeof(CompletedStoryLibraryRoot), "CompletedStoryLibraryRoot");
         SetupScene(ViewerScenePath, typeof(CompletedStoryViewerRoot), "CompletedStoryViewerRoot");
+        EditorSceneManager.OpenScene(LibraryScenePath, OpenSceneMode.Single);
+        StoryBricksSetupCompletedStoryLibraryUi.MountInActiveScene();
         StoryBricksBuildSettings.EnsureAllFlowScenesEnabled();
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
@@ -27,6 +29,11 @@ public static class StoryBricksSetupCompletedStories
     }
 
     static void EnsureRuntimeResources()
+    {
+        EnsureRuntimeResourcesPublic();
+    }
+
+    public static void EnsureRuntimeResourcesPublic()
     {
         System.IO.Directory.CreateDirectory("Assets/Resources/StorySummary");
         System.IO.Directory.CreateDirectory("Assets/Resources/UI");

@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// 单步发给 AI 助教的结构化说明；在 <see cref="TutorialStepsConfig.stepTutorDetails"/> 中与 steps 对齐。
+/// 单步发给语音助手「乐乐」的结构化说明；在 <see cref="TutorialStepsConfig.stepTutorDetails"/> 中与 steps 对齐。
 /// </summary>
 [System.Serializable]
 public class TutorialStepTutorDetail

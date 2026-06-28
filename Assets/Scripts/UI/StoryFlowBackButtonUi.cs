@@ -140,9 +140,21 @@ public static class StoryFlowBackButtonUi
 
     static void Wire(Button btn, string label, string sceneName)
     {
+        BindNavigation(btn, label, sceneName);
+    }
+
+    public static void BindNavigation(Button btn, string label, string sceneName)
+    {
+        if (btn == null || string.IsNullOrWhiteSpace(sceneName))
+            return;
+
         var text = btn.GetComponentInChildren<Text>();
         if (text != null)
             text.text = label;
+
+        var tmp = btn.GetComponentInChildren<TMPro.TextMeshProUGUI>();
+        if (tmp != null)
+            tmp.text = label;
 
         btn.onClick.RemoveAllListeners();
         btn.onClick.AddListener(() => SceneManager.LoadScene(sceneName.Trim()));

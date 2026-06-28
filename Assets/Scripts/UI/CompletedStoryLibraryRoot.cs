@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 
 /// <summary>「我的故事」绘本合集列表：UI 样式与 StorySummary 故事库一致。</summary>
@@ -12,6 +13,11 @@ public class CompletedStoryLibraryRoot : MonoBehaviour
     public string emptyHint = "还没有完成的故事绘本。\n完成一次故事创作后会自动保存在这里。";
     public string cardButtonLabel = "阅读";
     public StoryCardView cardPrefab;
+
+    [Header("UI（Prefab / 场景可视化编辑）")]
+    public StoryLibraryPageView pageView;
+    public StoryLibraryPageView pageViewPrefab;
+    public bool allowRuntimeFallbackUi = true;
 
     StoryLibraryUiBuilder.BuiltUi _ui;
     bool _uiBuilt;
@@ -38,19 +44,85 @@ public class CompletedStoryLibraryRoot : MonoBehaviour
         if (_uiBuilt)
             return;
 
-        _ui = StoryLibraryUiBuilder.Build(new StoryLibraryUiBuilder.BuildOptions
+        EnsurePageView();
+        if (pageView == null || !pageView.IsComplete)
+        {
+            Debug.LogError("[CompletedStory] 未找到可用的 StoryLibraryPageView。");
+            return;
+        }
+
+        BindPageView();
+        _uiBuilt = true;
+    }
+
+    void EnsurePageView()
+    {
+        if (pageView != null && pageView.IsComplete)
+            return;
+
+        if (pageViewPrefab == null)
+            pageViewPrefab = Resources.Load<StoryLibraryPageView>("UI/CompletedStoryLibraryPage");
+
+        if (pageViewPrefab != null)
+        {
+            pageView = Instantiate(pageViewPrefab);
+            pageView.name = pageViewPrefab.name;
+            return;
+        }
+
+        if (!allowRuntimeFallbackUi)
+            return;
+
+        Debug.LogWarning(
+            "[CompletedStory] 未配置 pageView，正在运行时临时搭建 UI。" +
+            "请运行菜单 StoryBricks/我的故事/挂载可视化 UI。");
+        pageView = StoryLibraryUiBuilder.BuildPageView(null, CreateBuildOptions());
+    }
+
+    void BindPageView()
+    {
+        _ui = new StoryLibraryUiBuilder.BuiltUi
+        {
+            Canvas = pageView.canvas,
+            HeaderTitle = pageView.headerTitle,
+            ScrollRect = pageView.scrollRect,
+            CardListContent = pageView.cardListContent,
+            EmptyHint = pageView.emptyHint,
+        };
+
+        if (pageView.headerTitle != null)
+            pageView.headerTitle.text = headerTitle;
+
+        if (pageView.emptyHint != null)
+        {
+            var emptyTmp = pageView.emptyHint.GetComponent<TMPro.TextMeshProUGUI>();
+            if (emptyTmp != null && !string.IsNullOrWhiteSpace(emptyHint))
+                emptyTmp.text = emptyHint;
+        }
+
+        if (pageView.backButton != null)
+        {
+            StoryFlowBackButtonUi.BindNavigation(pageView.backButton, "← 返回故事库", backSceneName);
+            pageView.backButton.transform.SetAsLastSibling();
+        }
+        else
+        {
+            var backBtn = StoryFlowBackButtonUi.EnsureTopLeft(_ui.Canvas, "← 返回故事库", backSceneName);
+            if (backBtn != null)
+                backBtn.transform.SetAsLastSibling();
+        }
+
+        if (FindObjectOfType<EventSystem>() == null)
+            new GameObject("EventSystem", typeof(EventSystem), typeof(StandaloneInputModule));
+    }
+
+    StoryLibraryUiBuilder.BuildOptions CreateBuildOptions() =>
+        new StoryLibraryUiBuilder.BuildOptions
         {
             headerTitle = headerTitle,
             emptyHint = emptyHint,
             useStoryLibraryTitleBanner = false,
-        });
-        var backBtn = StoryFlowBackButtonUi.EnsureTopLeft(_ui.Canvas, "← 返回故事库", backSceneName);
-        if (backBtn != null)
-            backBtn.transform.SetAsLastSibling();
-
-        _uiBuilt = true;
-        Debug.Log("[CompletedStory] 我的故事 UI 已按故事库样式搭建。");
-    }
+        };
 
     void RefreshCards()
     {

@@ -1,7 +1,5 @@
-using System.Reflection;
 using Gilzoide.LottiePlayer;
 using UnityEngine;
-using UnityEngine.UI;
 
 /// <summary>
 /// 在教程 Canvas 左下角显示 Lottie 吉祥物。动画正文使用 UTF-8 的 TextAsset（扩展名建议 .txt），
@@ -10,35 +8,45 @@ using UnityEngine.UI;
 public static class TutorialMascotView
 {
     const string DefaultResourcesPath = "TutorialMascot/AnimaBotLottie";
+    const string MascotObjectName = "TutorialMascot";
 
     /// <summary>
-    /// 若 <paramref name="lottieJsonText"/> 为空则尝试 <see cref="Resources.Load"/> 默认路径。
+    /// 在教程页吉祥物锚点显示 Lottie。若 anchor 为空则跳过。
     /// </summary>
-    public static void TryAddToCanvas(RectTransform canvasRoot, TextAsset lottieJsonText, float bottomBarHeightPx)
+    public static void TryAddToCanvas(RectTransform mascotAnchor, TextAsset lottieJsonText)
     {
-        var ta = lottieJsonText != null ? lottieJsonText : Resources.Load<TextAsset>(DefaultResourcesPath);
-        if (ta == null || string.IsNullOrEmpty(ta.text))
+        if (mascotAnchor == null)
+        {
+            Debug.LogWarning("[TutorialMascotView] 未指定 mascotRoot，跳过吉祥物。");
+            return;
+        }
+
+        if (mascotAnchor.Find(MascotObjectName) != null)
             return;
 
-        var go = new GameObject("TutorialMascot", typeof(RectTransform), typeof(CanvasRenderer));
-        go.layer = LayerMask.NameToLayer("UI");
-        var rt = go.GetComponent<RectTransform>();
-        rt.SetParent(canvasRoot, false);
-        rt.SetAsLastSibling();
+        var ta = lottieJsonText != null ? lottieJsonText : Resources.Load<TextAsset>(DefaultResourcesPath);
+        if (ta == null || string.IsNullOrWhiteSpace(ta.text))
+        {
+            Debug.LogWarning("[TutorialMascotView] 未找到 Lottie 文本资源，跳过吉祥物。");
+            return;
+        }
 
-        rt.anchorMin = new Vector2(0f, 0f);
-        rt.anchorMax = new Vector2(0f, 0f);
-        rt.pivot = new Vector2(0f, 0f);
-        rt.sizeDelta = new Vector2(300f, 300f);
-        rt.anchoredPosition = new Vector2(40f, bottomBarHeightPx + 28f);
+        var go = new GameObject(MascotObjectName, typeof(RectTransform), typeof(CanvasRenderer));
+        go.layer = LayerMask.NameToLayer("UI");
+        go.SetActive(false);
+
+        var rt = go.GetComponent<RectTransform>();
+        rt.SetParent(mascotAnchor, false);
+        StretchFull(rt);
 
         var player = go.AddComponent<ImageLottiePlayer>();
         player.raycastTarget = false;
 
-        const int texSize = 320;
-        SetPrivateField(player, "_width", texSize);
-        SetPrivateField(player, "_height", texSize);
-        SetPrivateField(player, "_loop", true);
+        // 必须先关掉自动播放；OnEnable 会清空 animation，OnStart 会在 SetAnimation 之前 Play。
+        SetSerializedField(player, "_autoPlay", AutoPlayEvent.No);
+        SetSerializedField(player, "_width", 320);
+        SetSerializedField(player, "_height", 320);
+        SetSerializedField(player, "_loop", true);
 
         var native = new NativeLottieAnimation(ta.text, "storybricks_tutorial_mascot", "");
         if (!native.IsCreated)
@@ -48,12 +56,24 @@ public static class TutorialMascotView
             return;
         }
 
+        go.SetActive(true);
         player.SetAnimation(native);
+        player.Play();
     }
 
-    static void SetPrivateField(object target, string fieldName, object value)
+    static void StretchFull(RectTransform rt)
     {
-        var f = target.GetType().GetField(fieldName, BindingFlags.Instance | BindingFlags.NonPublic);
-        f?.SetValue(target, value);
+        rt.anchorMin = Vector2.zero;
+        rt.anchorMax = Vector2.one;
+        rt.offsetMin = Vector2.zero;
+        rt.offsetMax = Vector2.zero;
+    }
+
+    static void SetSerializedField<T>(object target, string fieldName, T value)
+    {
+        var field = target.GetType().GetField(
+            fieldName,
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        field?.SetValue(target, value);
     }
 }

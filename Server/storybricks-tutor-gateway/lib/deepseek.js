@@ -46,10 +46,11 @@ function buildStoryCreationQuestionPrompt(body) {
     gapBlock += `${i + 1}. 类型=${kind || "未知"}；角色=${role || "无"}；参考话术=${fb || "无"}\n`;
   });
 
-  return `你是 3～8 岁儿童故事创作的「语音小老师」，负责用口语提问。
+  return `你是 3～8 岁儿童故事创作的语音助手「乐乐」，负责用口语提问。
 规则：
-- 根据故事、本页场景、前情、缺口，为每个缺口写一条 2～3 句的亲切中文提问，称呼「小朋友」，结尾邀请开口回答。
+- 根据故事、本页场景、前情、缺口，为每个缺口写一条 2～3 句的亲切中文提问，自称「乐乐」，称呼「小朋友」，直接邀请孩子开口回答（不要说「你好乐乐」唤醒词）。
 - CharacterBehavior：问这个角色在这页想做什么、在干什么。
+- CharacterPosition：问多个角色谁在前谁在后、离场景元素远近，或要不要调整站位。
 - OptionalStoryElement：若给了参考话术，可略作口语化但保持原意。
 - 结合前情举例，不要编造与场景矛盾的剧情。
 - 只输出 JSON 数组，不要 markdown：[{"id":"gap_0","text":"提问内容"}]
@@ -113,7 +114,7 @@ function buildStoryCreationImagePromptMessages(body) {
 - 已有参考图锁定角色外貌，描述中写角色名即可。
 - 禁止输出「参考图1」「图1的…外貌」「生成儿童绘本插画」等 img2img 套话（程序会自动加在句首）。
 - 横版 16:9 构图；角色不要特写大头；留出天空与背景。
-- 禁止画面内出现任何文字、对话框、字幕、水印。
+- 禁止画面内出现任何文字、对话框、字幕、水印；故事文字由程序在固定 UI 区域展示，插画里不要写字。
 - 若 isContinuationPage 为 true：必须与前面页面不同的新场景、新构图，勿复述上一页布局。`;
 
   const user = [
@@ -173,6 +174,267 @@ async function refineChildAnswer(transcript, fields) {
 }
 
 /** 故事创作 ASR：不接收「提问」全文，避免把问题里的举例（旗帜、鲜花等）写进孩子回答。 */
+function parseJsonObject(raw, label) {
+  const text = String(raw || "").trim();
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  const slice = start >= 0 && end > start ? text.slice(start, end + 1) : text;
+  try {
+    return JSON.parse(slice);
+  } catch {
+    throw new Error(`${label} JSON 无效: ${text.slice(0, 400)}`);
+  }
+}
+
+async function buildStoryCreationReply(body) {
+  const system = `你是 3～8 岁儿童故事共创语音助手「乐乐」。孩子正在通过对话补全「本页故事缺口」，你要像有耐心的故事伙伴，不是机械问卷。
+
+## 缺口类型 gapKind
+- CharacterBehavior：某角色的动作/在做什么
+- CharacterPosition：角色之间的位置、谁在前谁在后
+- OptionalStoryElement：本页可选道具/场景元素
+
+## 意图 intent（必填，小写英文）
+- answered：回答与当前缺口相关，信息可用
+- incomplete：沾边但太短/太模糊，还需追问
+- repeat_question：没听清、要求重复（如「什么」「再说一遍」「没听见」）
+- clarify：不懂问题意思（如「什么意思」「听不懂」）
+- off_topic：跑题、闲聊、与当前故事缺口无关
+
+## 输出规则
+- acknowledgement：1～2 句口语，温暖；repeat/clarify 先安抚；off_topic 温柔拉回，不批评
+- followUpQuestion：还需孩子回答时的下一句。repeat/clarify 用更短更易懂的话重问同一缺口；incomplete 只追问 1 个小点；off_topic 先简短回应再回扣主题；answered 且信息已够则留空
+- extractedAnswer：仅写入本句里与缺口相关的「故事事实」，不要把「什么」「不知道」「再说一遍」写进去；跑题则空
+- conversationDone：仅当 intent=answered 且 extractedAnswer 已足够回答缺口；或 turnIndex>=5 时可为 true 并尽量保留已有 extractedAnswer
+- 同一缺口最多 6 轮（turnIndex 0～5）
+
+只输出 JSON：
+{"intent":"answered|incomplete|repeat_question|clarify|off_topic","acknowledgement":"…","followUpQuestion":"…或空","extractedAnswer":"…或空","conversationDone":true/false}`;
+
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.pageTitle && `本页：${body.pageTitle}`,
+    body.sceneGuideText && `场景：${body.sceneGuideText}`,
+    body.roleName && `角色：${body.roleName}`,
+    body.gapKind && `缺口类型：${body.gapKind}`,
+    body.originalQuestion && `最初提问：${body.originalQuestion}`,
+    body.question && `当前提问：${body.question}`,
+    body.answer && `孩子刚说：${body.answer}`,
+    body.turnIndex != null && `当前轮次 turnIndex：${body.turnIndex}`,
+    body.gapConversationLog && `本缺口对话记录：\n${body.gapConversationLog}`,
+    body.previousSummary && `前情：${body.previousSummary}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "请生成回应 JSON" },
+    ],
+    { temperature: 0.65, max_tokens: 520 },
+  );
+  const obj = parseJsonObject(raw, "reply");
+  const intent = normalizeReplyIntent(obj.intent);
+  const followUp = String(obj.followUpQuestion || "").trim();
+  const extracted = String(obj.extractedAnswer || "").trim();
+  let done = Boolean(obj.conversationDone);
+  if (intent === "repeat_question" || intent === "clarify" || intent === "off_topic") {
+    done = false;
+  } else if (intent === "answered" && extracted) {
+    done = done || !followUp;
+  } else if (intent === "incomplete") {
+    done = false;
+  }
+  if (Number(body.turnIndex) >= 5) {
+    done = true;
+  }
+  return {
+    intent,
+    acknowledgement: String(obj.acknowledgement || defaultAck(intent)).trim(),
+    followUpQuestion: followUp,
+    extractedAnswer: extracted,
+    conversationDone: done,
+  };
+}
+
+function normalizeReplyIntent(raw) {
+  const s = String(raw || "answered").trim().toLowerCase();
+  if (s.includes("repeat")) return "repeat_question";
+  if (s.includes("clarify")) return "clarify";
+  if (s.includes("off") || s.includes("topic")) return "off_topic";
+  if (s.includes("incomplete")) return "incomplete";
+  return "answered";
+}
+
+function defaultAck(intent) {
+  switch (intent) {
+    case "repeat_question":
+      return "好呀，乐乐再说一遍！";
+    case "clarify":
+      return "没关系，乐乐换个说法问你！";
+    case "off_topic":
+      return "哈哈，我们先把这个故事说完好不好？";
+    case "incomplete":
+      return "嗯嗯，再说一点点乐乐就懂啦！";
+    default:
+      return "好的，我记住啦！";
+  }
+}
+
+async function buildStoryCreationPageCaption(body) {
+  const maxChars = Math.min(Math.max(Number(body.maxChars) || 120, 40), 200);
+  const system = `你是 3～8 岁儿童绘本的「讲稿作者」。请根据本页情节与孩子对话，写一段固定展示在画面右下角的绘本旁白。
+规则：
+- 语气温暖、像老师在给孩子讲故事；句子短，口语化，适合朗读。
+- 可自然融入角色简短对话（如：兔子说：「我再睡一会儿。」），但不要写成剧本格式。
+- 必须与前情、本页场景一致，保留孩子共创的内容。
+- 全角汉字与标点合计不超过 ${maxChars} 字；超出则自行删减。
+- 禁止出现「本页」「小朋友」「AI」等元叙述；禁止标题、编号、markdown。
+- 只输出一段正文。`;
+
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.pageTitle && `本页：${body.pageTitle}`,
+    body.sceneGuideText && `场景：${body.sceneGuideText}`,
+    body.previousSummary && `前情：${body.previousSummary}`,
+    body.pageSummary && `本页情节摘要：${body.pageSummary}`,
+    body.conversationLog && `本页对话：\n${body.conversationLog}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  const raw = await deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "请写本页绘本旁白" },
+    ],
+    { temperature: 0.55, max_tokens: 280 },
+  );
+
+  return clampCaptionText(raw, maxChars);
+}
+
+function clampCaptionText(text, maxChars) {
+  let t = String(text || "")
+    .trim()
+    .replace(/\r\n/g, " ")
+    .replace(/\n/g, " ");
+  while (t.includes("  ")) t = t.replace("  ", " ");
+  if (t.length <= maxChars) return t;
+  if (maxChars <= 1) return "…";
+  return `${t.slice(0, maxChars - 1).replace(/[，。、 ]$/u, "")}…`;
+}
+
+async function buildStoryCreationPageSummary(body) {
+  const system = `你是儿童绘本共创助手「乐乐」。请把本页所有对话整理成一段 2～4 句的中文故事描述，供确认与生图使用。
+规则：第三人称、画面感、保留孩子原意；只输出正文，不要标题或 JSON。`;
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.pageTitle && `本页：${body.pageTitle}`,
+    body.sceneGuideText && `场景：${body.sceneGuideText}`,
+    body.previousSummary && `前情：${body.previousSummary}`,
+    body.conversationLog && `本页对话：\n${body.conversationLog}`,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+
+  return deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "请输出本页故事摘要" },
+    ],
+    { temperature: 0.5, max_tokens: 320 },
+  );
+}
+
+async function buildStoryCreationFreeChat(body) {
+  const system = `你是 3～8 岁儿童故事创作页的语音伙伴「乐乐」，孩子正在摆实体积木、看摄像头画面。
+规则：
+- 句子短（2～4 句），耐心鼓励，主要聊本页故事与积木摆放。
+- 若孩子没听清、问「什么」「再说一遍」，简短解释或重复你上一句要点。
+- 若跑题（游戏、吃饭、无关闲聊），温柔回应一句再拉回本页故事或摆放。
+- 可提示缺谁、怎么摆，但不要代替孩子做决定。
+- 自称「乐乐」，不要要求说「你好乐乐」。`;
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.pageTitle && `本页：${body.pageTitle}`,
+    body.sceneGuideText && `场景：${body.sceneGuideText}`,
+    body.previousSummary && `前情：${body.previousSummary}`,
+    body.rosterHint && `当前摆放：${body.rosterHint}`,
+    body.userMessage && `孩子：${body.userMessage}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "你好" },
+    ],
+    { temperature: 0.65, max_tokens: 280 },
+  );
+}
+
+async function buildStoryCreationWaitNarration(body) {
+  const system = `你是「乐乐」。正在为孩子生成绘本插画，请用 2～3 句口语安抚等待，并简短复述本页即将画出的情节。不要提「AI」或「生图」。`;
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.pageTitle && `本页：${body.pageTitle}`,
+    body.pageSummary && `本页情节：${body.pageSummary}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "请说等待时的旁白" },
+    ],
+    { temperature: 0.6, max_tokens: 200 },
+  );
+}
+
+async function buildStoryCreationPageRecap(body) {
+  const system = `你是「乐乐」。本页绘本刚生成完，用 2～3 句鼓励孩子，并串联「到目前为止的故事」。语气温暖。`;
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.pageTitle && `刚完成：${body.pageTitle}`,
+    body.pageSummary && `本页：${body.pageSummary}`,
+    body.storySoFar && `到目前为止：${body.storySoFar}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "请说页末小结" },
+    ],
+    { temperature: 0.6, max_tokens: 260 },
+  );
+}
+
+async function buildStoryCreationBranchHint(body) {
+  const system = `根据本页孩子回答，若对下一页剧情有明确暗示，输出一句下一页情境提示（20字内）；若无则输出空字符串。只输出这一句，不要解释。`;
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.nextPageTitle && `下一页：${body.nextPageTitle}`,
+    body.pageSummary && `本页情节：${body.pageSummary}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "无" },
+    ],
+    { temperature: 0.4, max_tokens: 80 },
+  );
+  return raw.replace(/^["'「]|["'」]$/g, "").trim();
+}
+
 async function refineStoryCreationAnswer(transcript, fields = {}) {
   const roleName = String(fields.roleName || "").trim();
   const gapKind = String(fields.gapKind || "").trim();
@@ -206,6 +468,13 @@ module.exports = {
   buildStoryCreationQuestions,
   buildStoryCreationImagePrompt,
   buildStoryCreationImagePromptMessages,
+  buildStoryCreationReply,
+  buildStoryCreationPageSummary,
+  buildStoryCreationPageCaption,
+  buildStoryCreationFreeChat,
+  buildStoryCreationWaitNarration,
+  buildStoryCreationPageRecap,
+  buildStoryCreationBranchHint,
   refineChildAnswer,
   refineStoryCreationAnswer,
   hasDeepSeek,

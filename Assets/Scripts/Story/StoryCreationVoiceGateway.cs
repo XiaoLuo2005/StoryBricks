@@ -7,7 +7,7 @@ using UnityEngine;
 using UnityEngine.Networking;
 
 /// <summary>
-/// 故事创作语音网关客户端：TTS 提问、ASR 收录儿童回答。需运行 storybricks-tutor-gateway（默认 8787）。
+/// 故事创作语音助手「乐乐」：TTS 提问、ASR 收录儿童回答。需运行 storybricks-tutor-gateway（默认 8787）。
 /// </summary>
 public class StoryCreationVoiceGateway : MonoBehaviour
 {
@@ -21,6 +21,7 @@ public class StoryCreationVoiceGateway : MonoBehaviour
     AudioClip _micClip;
     bool _micRecording;
     UnityWebRequest _active;
+    ContinuousVoiceListener _continuousListener;
 
     public string GatewayBaseUrl
     {
@@ -34,6 +35,10 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         if (_audio == null)
             _audio = gameObject.AddComponent<AudioSource>();
         _audio.playOnAwake = false;
+
+        _continuousListener = GetComponent<ContinuousVoiceListener>();
+        if (_continuousListener == null)
+            _continuousListener = gameObject.AddComponent<ContinuousVoiceListener>();
     }
 
     void OnDestroy() => CancelRequest();
@@ -41,7 +46,37 @@ public class StoryCreationVoiceGateway : MonoBehaviour
     {
         CancelRequest();
         StopMicIfAny();
+        StopAnswerListening();
     }
+
+    public bool StartAnswerListening(
+        Action<byte[]> onUtterance,
+        Action<string> onError = null,
+        Action<bool> onSpeakingChanged = null)
+    {
+        StopMicIfAny();
+        if (_continuousListener == null)
+            return false;
+        return _continuousListener.StartListening(onUtterance, onError, onSpeakingChanged);
+    }
+
+    public void StopAnswerListening()
+    {
+        _continuousListener?.StopListening();
+    }
+
+    public void PauseAnswerListening()
+    {
+        _continuousListener?.Pause();
+    }
+
+    public void ResumeAnswerListening()
+    {
+        _continuousListener?.Resume();
+    }
+
+    public bool IsAnswerListening => _continuousListener != null && _continuousListener.IsActive;
+    public bool IsChildSpeaking => _continuousListener != null && _continuousListener.IsSpeaking;
 
     public void CancelRequest()
     {
@@ -53,10 +88,54 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// After SendWebRequest, read result and dispose. Returns false if CancelRequest/OnDisable
+    /// already disposed this request — do not touch req in that case.
+    /// </summary>
+    bool TryCompleteActiveRequest(
+        UnityWebRequest req,
+        out UnityWebRequest.Result result,
+        out string error,
+        out string responseText)
+    {
+        result = UnityWebRequest.Result.ConnectionError;
+        error = "";
+        responseText = "";
+
+        if (req == null || _active != req)
+            return false;
+
+        _active = null;
+        try
+        {
+            result = req.result;
+            error = req.error ?? "";
+            responseText = req.downloadHandler?.text ?? "";
+            return true;
+        }
+        finally
+        {
+            req.Dispose();
+        }
+    }
+
     public void StopPlayback()
     {
         if (_audio != null && _audio.isPlaying)
             _audio.Stop();
+    }
+
+    bool ShouldResumeListeningAfterSpeak()
+    {
+        return _continuousListener != null &&
+               _continuousListener.IsActive &&
+               !_continuousListener.IsPaused;
+    }
+
+    void ResumeListeningIfNeeded(bool resume)
+    {
+        if (resume)
+            ResumeAnswerListening();
     }
 
     public IEnumerator SpeakText(string text, Action<bool, string> onDone = null)
@@ -68,37 +147,49 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         }
 
         StopPlayback();
+        bool resumeListeningAfter = ShouldResumeListeningAfterSpeak();
+        if (resumeListeningAfter)
+            PauseAnswerListening();
         CancelRequest();
         var body = JsonUtility.ToJson(new TtsRequest { text = text.Trim() });
         var url = $"{GatewayBaseUrl}/api/story-creation/tts";
-        using var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
+        var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
         req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(body));
         req.downloadHandler = new DownloadHandlerBuffer();
         req.SetRequestHeader("Content-Type", "application/json");
         _active = req;
         yield return req.SendWebRequest();
-        _active = null;
 
-        if (req.result != UnityWebRequest.Result.Success)
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
         {
-            var err = string.IsNullOrEmpty(req.error) ? "TTS 网络错误" : req.error;
+            ResumeListeningIfNeeded(resumeListeningAfter);
+            onDone?.Invoke(false, "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            var err = string.IsNullOrEmpty(reqError) ? "TTS 网络错误" : reqError;
             Debug.LogWarning($"[StoryCreationVoice] {err}");
+            ResumeListeningIfNeeded(resumeListeningAfter);
             onDone?.Invoke(false, err);
             yield break;
         }
 
-        var resp = JsonUtility.FromJson<TtsResponse>(req.downloadHandler.text);
+        var resp = JsonUtility.FromJson<TtsResponse>(responseText);
         if (resp == null || !string.IsNullOrEmpty(resp.error) || string.IsNullOrEmpty(resp.audioBase64))
         {
             var err = resp?.error ?? "TTS 无音频";
             Debug.LogWarning($"[StoryCreationVoice] TTS 失败: {err}");
+            ResumeListeningIfNeeded(resumeListeningAfter);
             onDone?.Invoke(false, err);
             yield break;
         }
 
         yield return PlayAudioBase64(resp.audioBase64, resp.audioFormat);
-        if (_audio.isPlaying)
-            yield return new WaitWhile(() => _audio.isPlaying);
+        if (_audio != null && _audio.isPlaying)
+            yield return new WaitWhile(() => _audio != null && _audio.isPlaying);
+        ResumeListeningIfNeeded(resumeListeningAfter);
         onDone?.Invoke(true, "");
     }
 
@@ -122,18 +213,23 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         }
 
         var url = $"{GatewayBaseUrl}/api/story-creation/asr";
-        using var req = UnityWebRequest.Post(url, form);
+        var req = UnityWebRequest.Post(url, form);
         _active = req;
         yield return req.SendWebRequest();
-        _active = null;
 
-        if (req.result != UnityWebRequest.Result.Success)
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
         {
-            onDone?.Invoke("", req.error);
+            onDone?.Invoke("", "已取消");
             yield break;
         }
 
-        var resp = JsonUtility.FromJson<AsrResponse>(req.downloadHandler.text);
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<AsrResponse>(responseText);
         if (resp == null || !string.IsNullOrEmpty(resp.error))
         {
             onDone?.Invoke("", resp?.error ?? "识别失败");
@@ -155,21 +251,26 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         CancelRequest();
         var json = JsonUtility.ToJson(request);
         var url = $"{GatewayBaseUrl}/api/story-creation/questions";
-        using var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
+        var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
         req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
         req.downloadHandler = new DownloadHandlerBuffer();
         req.SetRequestHeader("Content-Type", "application/json");
         _active = req;
         yield return req.SendWebRequest();
-        _active = null;
 
-        if (req.result != UnityWebRequest.Result.Success)
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
         {
-            onDone?.Invoke(null, req.error);
+            onDone?.Invoke(null, "已取消");
             yield break;
         }
 
-        var resp = JsonUtility.FromJson<QuestionsResponse>(req.downloadHandler.text);
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke(null, reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<QuestionsResponse>(responseText);
         if (resp == null || !string.IsNullOrEmpty(resp.error))
         {
             onDone?.Invoke(null, resp?.error ?? "提问生成失败");
@@ -195,21 +296,26 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         CancelRequest();
         var json = JsonUtility.ToJson(request ?? new StoryCreationPromptRefineRequest());
         var url = $"{GatewayBaseUrl}/api/story-creation/refine-prompt";
-        using var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
+        var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
         req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
         req.downloadHandler = new DownloadHandlerBuffer();
         req.SetRequestHeader("Content-Type", "application/json");
         _active = req;
         yield return req.SendWebRequest();
-        _active = null;
 
-        if (req.result != UnityWebRequest.Result.Success)
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
         {
-            onDone?.Invoke("", req.error);
+            onDone?.Invoke("", "已取消");
             yield break;
         }
 
-        var resp = JsonUtility.FromJson<PromptRefineResponse>(req.downloadHandler.text);
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<PromptRefineResponse>(responseText);
         if (resp == null || !string.IsNullOrEmpty(resp.error))
         {
             onDone?.Invoke("", resp?.error ?? "Prompt 整理失败");
@@ -217,6 +323,239 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         }
 
         onDone?.Invoke(resp.prompt?.Trim() ?? "", "");
+    }
+
+    public IEnumerator FetchReply(
+        StoryCreationReplyRequest request,
+        Action<StoryCreationReplyResult, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationReplyRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/reply";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke(null, "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke(null, reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<StoryCreationReplyResult>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke(null, resp?.error ?? "接话失败");
+            yield break;
+        }
+        onDone?.Invoke(resp, "");
+    }
+
+    public IEnumerator FetchPageSummary(
+        StoryCreationSummaryRequest request,
+        Action<string, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationSummaryRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/summary";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke("", "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<SummaryResponse>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke("", resp?.error ?? "摘要失败");
+            yield break;
+        }
+        onDone?.Invoke(resp.summary?.Trim() ?? "", "");
+    }
+
+    public IEnumerator FetchPageCaption(
+        StoryCreationPageCaptionRequest request,
+        Action<string, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationPageCaptionRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/page-caption";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke("", "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<PageCaptionResponse>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke("", resp?.error ?? "旁白生成失败");
+            yield break;
+        }
+        onDone?.Invoke(resp.caption?.Trim() ?? "", "");
+    }
+
+    public IEnumerator FetchFreeChatReply(
+        StoryCreationFreeChatRequest request,
+        Action<string, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationFreeChatRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/free-chat";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke("", "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<FreeChatResponse>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke("", resp?.error ?? "对话失败");
+            yield break;
+        }
+        onDone?.Invoke(resp.reply?.Trim() ?? "", "");
+    }
+
+    public IEnumerator FetchWaitNarration(
+        StoryCreationNarrationRequest request,
+        Action<string, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationNarrationRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/wait-narration";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke("", "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<NarrationResponse>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke("", resp?.error ?? "旁白失败");
+            yield break;
+        }
+        onDone?.Invoke(resp.narration?.Trim() ?? "", "");
+    }
+
+    public IEnumerator FetchPageRecap(
+        StoryCreationRecapRequest request,
+        Action<string, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationRecapRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/page-recap";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke("", "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<RecapResponse>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke("", resp?.error ?? "小结失败");
+            yield break;
+        }
+        onDone?.Invoke(resp.recap?.Trim() ?? "", "");
+    }
+
+    public IEnumerator FetchBranchHint(
+        StoryCreationBranchRequest request,
+        Action<string, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationBranchRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/branch-hint";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke("", "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke("", reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<BranchHintResponse>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke("", resp?.error ?? "分支提示失败");
+            yield break;
+        }
+        onDone?.Invoke(resp.hint?.Trim() ?? "", "");
+    }
+
+    static UnityWebRequest PostJson(string url, string json)
+    {
+        var req = new UnityWebRequest(url, UnityWebRequest.kHttpVerbPOST);
+        req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+        req.downloadHandler = new DownloadHandlerBuffer();
+        req.SetRequestHeader("Content-Type", "application/json");
+        return req;
     }
 
     public bool BeginRecording()
@@ -486,6 +825,133 @@ public class StoryCreationVoiceGateway : MonoBehaviour
     class PromptRefineResponse
     {
         public string prompt;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationReplyRequest
+    {
+        public string storyTitle;
+        public string pageTitle;
+        public string sceneGuideText;
+        public string previousSummary;
+        public string gapKind;
+        public string roleName;
+        public string originalQuestion;
+        public string question;
+        public string answer;
+        public int turnIndex;
+        public string gapConversationLog;
+    }
+
+    [Serializable]
+    public class StoryCreationReplyResult
+    {
+        public string intent;
+        public string acknowledgement;
+        public string followUpQuestion;
+        public string extractedAnswer;
+        public bool conversationDone;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationSummaryRequest
+    {
+        public string storyTitle;
+        public string pageTitle;
+        public string sceneGuideText;
+        public string previousSummary;
+        public string conversationLog;
+    }
+
+    [Serializable]
+    class SummaryResponse
+    {
+        public string summary;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationPageCaptionRequest
+    {
+        public string storyTitle;
+        public string pageTitle;
+        public string sceneGuideText;
+        public string previousSummary;
+        public string pageSummary;
+        public string conversationLog;
+        public int maxChars;
+    }
+
+    [Serializable]
+    class PageCaptionResponse
+    {
+        public string caption;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationFreeChatRequest
+    {
+        public string storyTitle;
+        public string pageTitle;
+        public string sceneGuideText;
+        public string previousSummary;
+        public string rosterHint;
+        public string userMessage;
+    }
+
+    [Serializable]
+    class FreeChatResponse
+    {
+        public string reply;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationNarrationRequest
+    {
+        public string storyTitle;
+        public string pageTitle;
+        public string pageSummary;
+    }
+
+    [Serializable]
+    class NarrationResponse
+    {
+        public string narration;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationRecapRequest
+    {
+        public string storyTitle;
+        public string pageTitle;
+        public string pageSummary;
+        public string storySoFar;
+    }
+
+    [Serializable]
+    class RecapResponse
+    {
+        public string recap;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationBranchRequest
+    {
+        public string storyTitle;
+        public string nextPageTitle;
+        public string pageSummary;
+    }
+
+    [Serializable]
+    class BranchHintResponse
+    {
+        public string hint;
         public string error;
     }
 }

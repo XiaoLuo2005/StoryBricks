@@ -261,3 +261,21 @@ MonoBehaviour:
   fallbackLibrarySceneName: StorySummary
   backSceneName: StoryWorks
   finishSceneName: StoryWorks
+  imageGenServerUrl: http://127.0.0.1:8800/generate
+  tutorGatewayUrl: http://127.0.0.1:8787
+  answerVoiceButton: {fileID: 0}
+  voiceQuestionText: {fileID: 0}
+  useAiGeneratedQuestions: 1
+  useAiPromptRefinement: 1
+  allowTextAnswerInput: 1
+  defaultAnswerInputMode: 0
+  answerTextInput: {fileID: 0}
+  answerTextSubmitButton: {fileID: 0}
+  answerModeVoiceButton: {fileID: 0}
+  answerModeTextButton: {fileID: 0}
+--- !u!1660057539 &9223372036854775807
+SceneRoots:
+  m_ObjectHideFlags: 0
+  m_Roots:
+  - {fileID: 903000004}
+  - {fileID: 903000011}

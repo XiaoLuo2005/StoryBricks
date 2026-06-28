@@ -72,7 +72,7 @@ public static class StoryPageGenerationPipeline
         if (result.missingIds.Count > 0)
         {
             result.ok = false;
-            result.message = $"缺少角色积木（ArUco ID：{string.Join("、", result.missingIds)}），请补全后重试。";
+            result.message = FormatKidMissingMessage(result.missingIds, null);
         }
         else if (result.detectedIds.Count == 0)
         {
@@ -81,6 +81,39 @@ public static class StoryPageGenerationPipeline
         }
 
         return result;
+    }
+
+    public static string FormatKidMissingMessage(
+        IReadOnlyList<int> missingIds,
+        StoryDefinition.CharacterReferenceEntry[] catalog)
+    {
+        if (missingIds == null || missingIds.Count == 0)
+            return "请把积木摆进镜头后再试。";
+
+        var names = new List<string>();
+        foreach (int id in missingIds)
+        {
+            string role = ResolveRoleNameForMarker(id, catalog);
+            names.Add(role);
+        }
+
+        if (names.Count == 1)
+            return $"还差 {names[0]} 的积木，把它放进镜头吧！";
+        return $"还差 {string.Join("、", names)}，把积木都摆齐再点确认。";
+    }
+
+    static string ResolveRoleNameForMarker(int markerId, StoryDefinition.CharacterReferenceEntry[] catalog)
+    {
+        if (catalog != null)
+        {
+            foreach (var entry in catalog)
+            {
+                if (entry != null && entry.markerId == markerId &&
+                    !string.IsNullOrWhiteSpace(entry.roleName))
+                    return entry.roleName.Trim();
+            }
+        }
+        return $"伙伴{markerId}";
     }
 
     /// <summary>
@@ -255,7 +288,7 @@ public static class StoryPageGenerationPipeline
     }
 
     const string HardConstraintsSuffix =
-        "角色外貌必须与参考图一致，柔和水彩绘本风格，横版构图，无文字无水印。";
+        "角色外貌必须与参考图一致，柔和水彩绘本风格，横版构图，画面中禁止任何文字、字母、数字、对话框、字幕、标题、水印。";
 
     /// <summary>将 AI 整理后的场景描述与参考图说明、硬性约束合并为最终生图 Prompt。</summary>
     public static string AssembleFinalPrompt(PromptInputBundle bundle, string aiRefinedSceneText)
