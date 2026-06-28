@@ -259,6 +259,35 @@ async function refineStoryCreationImagePrompt(body) {
   return raw.replace(/^["'「]|["'」]$/g, "").trim();
 }
 
+async function extractPageStory(body) {
+  if (deepseek.hasDeepSeek()) {
+    try {
+      return await deepseek.buildStoryCreationExtractPageStory(body);
+    } catch (e) {
+      console.warn("[extract-page-story] DeepSeek 失败，使用本地回退:", e.message);
+    }
+  }
+
+  const log = String(body.conversationLog || "").trim();
+  const scene = String(body.sceneGuideText || "").trim();
+  const voiceSupplement = log.length > 0 ? log.replace(/\r/g, "").slice(0, 400) : scene;
+  const recapLine = voiceSupplement
+    ? `我听说是：${voiceSupplement.slice(0, 120)}。`
+    : `这一页是${body.pageTitle || "故事"}，${scene || "摆好了我们就去画！"}`;
+  const gaps = Array.isArray(body.gaps) ? body.gaps : [];
+  const behaviorGap = gaps.find((g) => String(g.kind || "").includes("Behavior"));
+  const needMore = log.length < 8 && behaviorGap;
+  return {
+    voiceSupplement: voiceSupplement || scene,
+    recapLine,
+    missingField: needMore ? "behavior" : "none",
+    followUpQuestion: needMore
+      ? `再跟乐乐说说，${behaviorGap.roleName || "小伙伴"}这一页在干什么呀？`
+      : "",
+    conversationDone: !needMore && Boolean(voiceSupplement || scene),
+  };
+}
+
 function buildStoryCreationQuestionPrompt(body) {
   const storyTitle = String(body.storyTitle || "故事").trim();
   const pageTitle = String(body.pageTitle || "").trim();
@@ -475,6 +504,13 @@ const server = http.createServer(async (req, res) => {
       }
       const reply = await deepseek.buildStoryCreationFreeChat(body || {});
       sendJson(res, 200, { reply, error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/story-creation/extract-page-story") {
+      const body = await readJsonBody(req);
+      const result = await extractPageStory(body || {});
+      sendJson(res, 200, { ...result, error: "" });
       return;
     }
 

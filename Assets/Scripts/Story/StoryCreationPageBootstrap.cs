@@ -28,7 +28,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     }
 
     const float CaptureCountdownSeconds = 3f;
-    const int MaxTurnsPerGap = 6;
 
     public string fallbackLibrarySceneName = StoryFlowScenes.StoryLibrary;
     public string backSceneName = StoryFlowScenes.StoryWorks;
@@ -47,9 +46,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     [Tooltip("可选：专门显示当前语音提问全文；留空则用左下角 GuideText")]
     public Text voiceQuestionText;
-
-    [Tooltip("是否用大模型（DeepSeek）生成行为类提问；元素问仍用 optionalElementQuestion")]
-    public bool useAiGeneratedQuestions = true;
 
     [Tooltip("生图前是否用大模型整理各来源文本为连贯场景描述；失败则回退本地拼接")]
     public bool useAiPromptRefinement = true;
@@ -135,7 +131,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     RectTransform _canvasRoot;
 
     bool _waitingForVoiceAnswer;
-    bool _leleAwakeForCurrentQuestion;
     string _pendingVoiceTranscript;
     string _pendingVoiceError;
     string _currentVoiceQuestion;
@@ -393,9 +388,11 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             return;
 
         _arDirector.CharacterArrived -= OnCharacterArrived;
+        _arDirector.CharacterMoved -= OnCharacterMoved;
         _arDirector.AllCharactersReady -= OnAllCharactersReady;
         _arDirector.RosterHintChanged -= OnRosterHintChanged;
         _arDirector.CharacterArrived += OnCharacterArrived;
+        _arDirector.CharacterMoved += OnCharacterMoved;
         _arDirector.AllCharactersReady += OnAllCharactersReady;
         _arDirector.RosterHintChanged += OnRosterHintChanged;
     }
@@ -404,14 +401,23 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     {
         if (_phase != CreationPhase.Building || _leleHost == null)
             return;
-        _leleHost.ReactPlacement($"{roleName}来啦！把它摆到你想要的位置吧。");
+        _leleHost.ReactPlacement($"{roleName}来啦！摆好位置，跟乐乐说说 ta 在干嘛。");
+    }
+
+    void OnCharacterMoved(string roleName)
+    {
+        if (_phase != CreationPhase.Building || _leleHost == null)
+            return;
+        if (string.IsNullOrWhiteSpace(roleName))
+            return;
+        _leleHost.ReactPlacement($"哇，{roleName}挪位置啦！现在想做什么呀？");
     }
 
     void OnAllCharactersReady()
     {
         if (_phase != CreationPhase.Building || _leleHost == null)
             return;
-        _leleHost.ReactPlacement("伙伴都到齐啦！摆好姿势后，点「确认生成」，我们一起编这一页的故事。");
+        _leleHost.ReactPlacement("伙伴都到齐啦！边玩边讲，好了就点「这页摆好了」。");
     }
 
     void OnRosterHintChanged(string hint)
@@ -525,13 +531,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         _pendingVoiceError = "";
         _waitingForVoiceAnswer = false;
         SetStatus("收到！准备下一问…");
-    }
-
-    string BuildAnswerStatusHint(int index, int total)
-    {
-        if (allowTextAnswerInput && _answerInputMode == AnswerInputMode.Text)
-            return $"提问 {index + 1}/{total} · 文字模式：输入后点「提交」";
-        return $"提问 {index + 1}/{total} · 直接说话回答{LeleVoiceAssistant.DisplayName}";
     }
 
     void UpdateAnswerInputUi()
@@ -921,6 +920,10 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         if (appendToLele && _leleHost != null)
             _leleHost.AppendLele(text);
 
+        bool resumeFreeChat = _phase == CreationPhase.Building && _leleHost != null && _leleHost.IsFreeChatEnabled;
+        if (resumeFreeChat)
+            _leleHost.SetFreeChatEnabled(false);
+
         bool ok = false;
         string ttsError = "";
         yield return _voiceGateway.SpeakText(text, (success, err) =>
@@ -928,6 +931,10 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             ok = success;
             ttsError = err;
         });
+
+        if (resumeFreeChat && _phase == CreationPhase.Building)
+            _leleHost.SetFreeChatEnabled(true);
+
         SetStatus(ok ? "" : $"引导语音失败：{ttsError}（请检查 gateway 与 .env 卡密）");
     }
 
@@ -940,21 +947,11 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     IEnumerator ConfirmAndGenerateCoroutine()
     {
-        SetPhase(CreationPhase.Capturing);
-        for (int i = (int)CaptureCountdownSeconds; i > 0; i--)
-        {
-            SetStatus($"请移开手部，{i} 秒后抓拍…");
-            yield return new WaitForSeconds(1f);
-        }
-
-        SetStatus("正在识别积木…");
-
         var page = GetCurrentPage();
         var detectedIds = StoryPageGenerationPipeline.CollectDetectedMarkerIds(_arUcoDetector);
         var validation = StoryPageGenerationPipeline.ValidateRequiredCharacters(page, detectedIds);
         if (!validation.ok)
         {
-            SetPhase(CreationPhase.Building);
             SetStatus(StoryPageGenerationPipeline.FormatKidMissingMessage(
                 validation.missingIds,
                 _characterReferences));
@@ -963,7 +960,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
         if (_characterReferences == null || _characterReferences.Length == 0)
         {
-            SetPhase(CreationPhase.Building);
             SetStatus("故事未配置 characterReferences 角色参考图。");
             yield break;
         }
@@ -976,186 +972,85 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             _markerTaxonomy);
 
         string voiceSupplement = "";
-        if (gaps.Count > 0)
+        if (gaps.Count > 0 || _leleHost != null)
         {
             SetPhase(CreationPhase.VoiceInteracting);
-            for (int voiceAttempt = 0; voiceAttempt < 2; voiceAttempt++)
-            {
-                voiceSupplement = "";
-                yield return RunVoiceInteractionCoroutine(page, gaps, result => voiceSupplement = result ?? "");
-                if (!string.IsNullOrWhiteSpace(voiceSupplement))
-                    break;
-                if (voiceAttempt == 0)
-                    _leleHost?.AppendLele("没关系，我们再来编一遍！");
-            }
-
+            yield return RunAmbientStoryCloseCoroutine(page, gaps, result => voiceSupplement = result ?? "");
             if (string.IsNullOrWhiteSpace(voiceSupplement))
             {
                 SetPhase(CreationPhase.Building);
-                SetStatus("还没定好故事，摆好积木后再试一次。");
+                SetStatus("还没定好故事，边玩边跟乐乐说说，再点「这页摆好了」。");
                 yield break;
             }
-
-            if (_phase == CreationPhase.Building)
-                yield break;
         }
 
         if (string.IsNullOrWhiteSpace(_lastPageSummary))
-            _lastPageSummary = string.IsNullOrWhiteSpace(voiceSupplement)
-                ? page?.sceneGuideText ?? ""
-                : voiceSupplement.Trim();
+            _lastPageSummary = voiceSupplement.Trim();
+
+        SetPhase(CreationPhase.Capturing);
+        for (int i = (int)CaptureCountdownSeconds; i > 0; i--)
+        {
+            SetStatus($"请移开手部，{i} 秒后抓拍…");
+            yield return new WaitForSeconds(1f);
+        }
+
+        SetStatus("正在识别积木…");
+        detectedIds = StoryPageGenerationPipeline.CollectDetectedMarkerIds(_arUcoDetector);
+        validation = StoryPageGenerationPipeline.ValidateRequiredCharacters(page, detectedIds);
+        if (!validation.ok)
+        {
+            SetPhase(CreationPhase.Building);
+            SetStatus(StoryPageGenerationPipeline.FormatKidMissingMessage(
+                validation.missingIds,
+                _characterReferences));
+            yield break;
+        }
 
         yield return GeneratePageImageCoroutine(page, validation, voiceSupplement, isRegenerate: false);
     }
 
-    IEnumerator RunVoiceInteractionCoroutine(
+    IEnumerator RunAmbientStoryCloseCoroutine(
         StoryDefinition.StoryPageDefinition page,
         List<StoryCreationGapAnalyzer.Gap> gaps,
         System.Action<string> onComplete)
     {
         if (_voiceGateway == null)
         {
-            onComplete?.Invoke("");
+            onComplete?.Invoke(page?.sceneGuideText ?? "");
             yield break;
         }
 
         _leleHost?.SetFreeChatEnabled(false);
-        _leleHost?.AppendLele("伙伴摆好啦！我们一起来编这一页的故事吧。没听清可以说「再说一遍」，乐乐会讲给你听。");
+        SetStatus("乐乐在整理你刚才讲的故事…");
 
-        var questions = new List<string>();
-        yield return FetchQuestionsCoroutine(page, gaps, questions);
-        var gapAnswers = new List<string>();
-        var conversationLog = new System.Text.StringBuilder();
+        string conversationLog = _leleHost?.BuildExtractConversationLog() ?? "";
+        StoryCreationVoiceGateway.StoryCreationExtractResult extract = null;
 
-        for (int i = 0; i < questions.Count; i++)
+        for (int pass = 0; pass < 3; pass++)
         {
-            var gap = gaps[i];
-            string originalQuestion = questions[i];
-            string question = originalQuestion;
-            int turnIndex = 0;
-            string gapAnswer = "";
-            var gapLog = new System.Text.StringBuilder();
-
-            while (turnIndex < MaxTurnsPerGap)
-            {
-                _currentVoiceQuestion = question;
-                _currentGapKind = gap.kind.ToString();
-                _currentGapRoleName = gap.roleName ?? "";
-                if (answerTextInput != null)
-                    answerTextInput.text = "";
-                BeginVoiceAnswerWindow();
-                ShowVoiceQuestionText(question);
-                SetStatus(BuildAnswerStatusHint(i, questions.Count));
-                if (turnIndex == 0)
-                    _leleHost?.AppendLele(question);
-
-                bool spoke = false;
-                string ttsError = "";
-                yield return _voiceGateway.SpeakText(question, (success, err) =>
+            string extractErr = "";
+            yield return _voiceGateway.FetchExtractPageStory(
+                BuildExtractRequest(page, gaps, conversationLog),
+                (r, e) =>
                 {
-                    spoke = success;
-                    ttsError = err;
+                    extract = r;
+                    extractErr = e;
                 });
-                if (!spoke)
-                    SetStatus($"（语音播放失败：{ttsError}，请看屏幕文字）{i + 1}/{questions.Count}");
 
-                StartContinuousAnswerListeningIfVoiceMode();
-                yield return WaitForChildVoiceAnswer();
-                StopContinuousAnswerListening();
-
-                if (!string.IsNullOrWhiteSpace(_pendingVoiceError))
-                {
-                    SetStatus(_pendingVoiceError);
-                    yield return new WaitForSeconds(0.5f);
-                    continue;
-                }
-
-                if (string.IsNullOrWhiteSpace(_pendingVoiceTranscript))
-                {
-                    SetStatus("未收到回答，请再试一次");
-                    yield return new WaitForSeconds(0.5f);
-                    continue;
-                }
-
-                string answer = _pendingVoiceTranscript.Trim();
-                _leleHost?.AppendChild(answer);
-                gapLog.AppendLine($"{LeleVoiceAssistant.DisplayName}：{question}");
-                gapLog.AppendLine($"孩子：{answer}");
-                conversationLog.AppendLine($"{gap.roleName} Q: {question}");
-                conversationLog.AppendLine($"A: {answer}");
-
-                StoryCreationVoiceGateway.StoryCreationReplyResult reply = null;
-                string replyErr = "";
-                yield return _voiceGateway.FetchReply(
-                    new StoryCreationVoiceGateway.StoryCreationReplyRequest
-                    {
-                        storyTitle = StorySessionCache.StoryTitle,
-                        pageTitle = page?.pageTitle ?? "",
-                        sceneGuideText = page?.sceneGuideText ?? "",
-                        previousSummary = StorySessionCache.BuildPreviousPagesSummary(),
-                        gapKind = _currentGapKind,
-                        roleName = _currentGapRoleName,
-                        originalQuestion = originalQuestion,
-                        question = question,
-                        answer = answer,
-                        turnIndex = turnIndex,
-                        gapConversationLog = gapLog.ToString(),
-                    },
-                    (r, e) =>
-                    {
-                        reply = r;
-                        replyErr = e;
-                    });
-
-                if (reply == null)
-                    reply = BuildLocalGapReplyFallback(answer, question, originalQuestion, turnIndex);
-
-                if (!string.IsNullOrWhiteSpace(reply.acknowledgement))
-                {
-                    _leleHost?.AppendLele(reply.acknowledgement);
-                    yield return _voiceGateway.SpeakText(reply.acknowledgement);
-                }
-                else if (!string.IsNullOrEmpty(replyErr))
-                {
-                    Debug.LogWarning($"[StoryCreation] 接话失败：{replyErr}");
-                }
-
-                if (!string.IsNullOrWhiteSpace(reply.extractedAnswer))
-                    gapAnswer = MergeGapAnswer(gapAnswer, reply.extractedAnswer);
-                else if (ShouldTreatAsStoryFact(reply.intent, answer))
-                    gapAnswer = MergeGapAnswer(gapAnswer, answer);
-
-                if (!string.IsNullOrWhiteSpace(gapAnswer) &&
-                    _arDirector != null &&
-                    reply.intent == "answered")
-                {
-                    _arDirector.ShowSpeechBubble(_currentGapRoleName, gapAnswer);
-                }
-
-                turnIndex++;
-
-                if (reply.conversationDone)
-                    break;
-
-                if (!string.IsNullOrWhiteSpace(reply.followUpQuestion))
-                {
-                    question = reply.followUpQuestion.Trim();
-                    continue;
-                }
-
-                if (IsRedirectGapIntent(reply.intent))
-                {
-                    question = originalQuestion;
-                    continue;
-                }
-
-                if (reply.intent == "incomplete" && turnIndex < MaxTurnsPerGap)
-                    continue;
-
-                break;
+            if (extract == null)
+            {
+                if (!string.IsNullOrEmpty(extractErr))
+                    Debug.LogWarning($"[StoryCreation] 故事整理失败：{extractErr}");
+                extract = BuildLocalExtractFallback(page, gaps, conversationLog);
             }
 
-            gapAnswers.Add(gapAnswer);
+            if (extract.conversationDone || string.IsNullOrWhiteSpace(extract.followUpQuestion))
+                break;
+            if (pass >= 2)
+                break;
+
+            yield return AskSingleOpenQuestionCoroutine(extract.followUpQuestion);
+            conversationLog = _leleHost?.BuildExtractConversationLog() ?? conversationLog;
         }
 
         if (_guideText != null && page != null)
@@ -1167,25 +1062,134 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             _answerUiRoot.SetActive(false);
         StopContinuousAnswerListening();
 
-        string draftSupplement = BuildVoiceSupplement(gaps, gapAnswers);
-        string confirmed = draftSupplement;
-        yield return RunSummaryConfirmationCoroutine(page, conversationLog.ToString(), draftSupplement, s =>
-        {
-            confirmed = s;
-        });
+        string supplement = extract?.voiceSupplement?.Trim() ?? "";
+        if (string.IsNullOrWhiteSpace(supplement))
+            supplement = page?.sceneGuideText?.Trim() ?? "";
 
-        StoreConversationLog(conversationLog.ToString());
-        onComplete?.Invoke(confirmed ?? draftSupplement);
+        string recap = extract?.recapLine?.Trim();
+        if (string.IsNullOrWhiteSpace(recap))
+            recap = $"我听说是：{supplement}";
+
+        string confirmed = supplement;
+        yield return RunSummaryConfirmationCoroutine(
+            page,
+            conversationLog,
+            supplement,
+            s => confirmed = s,
+            recap);
+
+        StoreConversationLog(conversationLog);
+        onComplete?.Invoke(confirmed ?? supplement);
+    }
+
+    IEnumerator AskSingleOpenQuestionCoroutine(string question)
+    {
+        if (string.IsNullOrWhiteSpace(question) || _voiceGateway == null)
+            yield break;
+
+        SetPhase(CreationPhase.VoiceInteracting);
+        _leleHost?.AppendLele(question);
+        ShowVoiceQuestionText(question);
+        SetStatus("跟乐乐随便说说就行");
+
+        yield return _voiceGateway.SpeakText(question);
+        BeginVoiceAnswerWindow();
+        StartContinuousAnswerListeningIfVoiceMode();
+        yield return WaitForChildVoiceAnswer();
+        StopContinuousAnswerListening();
+
+        if (!string.IsNullOrWhiteSpace(_pendingVoiceError))
+        {
+            SetStatus(_pendingVoiceError);
+            yield break;
+        }
+
+        if (string.IsNullOrWhiteSpace(_pendingVoiceTranscript))
+        {
+            SetStatus("没听清也没关系，我们先用刚才听到的");
+            yield break;
+        }
+
+        string answer = _pendingVoiceTranscript.Trim();
+        _leleHost?.AppendChild(answer);
+        _leleHost?.AppendStoryDraft(answer);
+    }
+
+    StoryCreationVoiceGateway.StoryCreationExtractRequest BuildExtractRequest(
+        StoryDefinition.StoryPageDefinition page,
+        List<StoryCreationGapAnalyzer.Gap> gaps,
+        string conversationLog)
+    {
+        return new StoryCreationVoiceGateway.StoryCreationExtractRequest
+        {
+            storyTitle = StorySessionCache.StoryTitle,
+            pageTitle = page?.pageTitle ?? "",
+            sceneGuideText = page?.sceneGuideText ?? "",
+            previousSummary = StorySessionCache.BuildPreviousPagesSummary(),
+            rosterHint = _leleHost?.RosterHint ?? "",
+            conversationLog = conversationLog ?? "",
+            detectedRoles = BuildDetectedRolesLabel(gaps),
+            gaps = BuildGapDtos(gaps ?? new List<StoryCreationGapAnalyzer.Gap>()),
+        };
+    }
+
+    static string BuildDetectedRolesLabel(List<StoryCreationGapAnalyzer.Gap> gaps)
+    {
+        if (gaps == null || gaps.Count == 0)
+            return "";
+        var names = new HashSet<string>();
+        foreach (var gap in gaps)
+        {
+            if (!string.IsNullOrWhiteSpace(gap.roleName))
+                names.Add(gap.roleName.Trim());
+        }
+        return string.Join("、", names);
+    }
+
+    static StoryCreationVoiceGateway.StoryCreationExtractResult BuildLocalExtractFallback(
+        StoryDefinition.StoryPageDefinition page,
+        List<StoryCreationGapAnalyzer.Gap> gaps,
+        string conversationLog)
+    {
+        string log = conversationLog?.Trim() ?? "";
+        string scene = page?.sceneGuideText?.Trim() ?? "";
+        string supplement = log.Length > 0 ? log : scene;
+        var behaviorGap = default(StoryCreationGapAnalyzer.Gap);
+        var hasBehaviorGap = false;
+        if (gaps != null)
+        {
+            foreach (var g in gaps)
+            {
+                if (g.kind != StoryCreationGapAnalyzer.GapKind.CharacterBehavior)
+                    continue;
+                behaviorGap = g;
+                hasBehaviorGap = true;
+                break;
+            }
+        }
+
+        bool needMore = log.Length < 8 && hasBehaviorGap && !string.IsNullOrWhiteSpace(behaviorGap.roleName);
+        return new StoryCreationVoiceGateway.StoryCreationExtractResult
+        {
+            voiceSupplement = supplement,
+            recapLine = supplement.Length > 0 ? $"我听说是：{supplement}" : scene,
+            missingField = needMore ? "behavior" : "none",
+            followUpQuestion = needMore
+                ? $"再跟乐乐说说，{behaviorGap.roleName}这一页在干什么呀？"
+                : "",
+            conversationDone = !needMore && !string.IsNullOrWhiteSpace(supplement),
+        };
     }
 
     IEnumerator RunSummaryConfirmationCoroutine(
         StoryDefinition.StoryPageDefinition page,
         string conversationLog,
         string draftSupplement,
-        System.Action<string> onConfirmed)
+        System.Action<string> onConfirmed,
+        string recapLineOverride = null)
     {
         string summary = draftSupplement;
-        if (_voiceGateway != null)
+        if (_voiceGateway != null && string.IsNullOrWhiteSpace(recapLineOverride))
         {
             yield return _voiceGateway.FetchPageSummary(
                 new StoryCreationVoiceGateway.StoryCreationSummaryRequest
@@ -1206,8 +1210,9 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         }
 
         _lastPageSummary = summary;
-        string confirmPrompt =
-            $"好，{LeleVoiceAssistant.DisplayName}总结一下：{summary}。小朋友，这样对吗？说「对」我就去画，说「想改」我们再来一遍。";
+        string confirmPrompt = !string.IsNullOrWhiteSpace(recapLineOverride)
+            ? $"{recapLineOverride.Trim()} 小朋友，这样对吗？说「对」我就去画，说「想改」我们再来一遍。"
+            : $"好，{LeleVoiceAssistant.DisplayName}总结一下：{summary}。小朋友，这样对吗？说「对」我就去画，说「想改」我们再来一遍。";
 
         for (int confirmTurn = 0; confirmTurn < 3; confirmTurn++)
         {
@@ -1356,79 +1361,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             StorySessionCache.SetNextPageSceneHint(hint);
     }
 
-    IEnumerator FetchQuestionsCoroutine(
-        StoryDefinition.StoryPageDefinition page,
-        List<StoryCreationGapAnalyzer.Gap> gaps,
-        List<string> outQuestions)
-    {
-        outQuestions.Clear();
-        if (gaps == null || gaps.Count == 0)
-            yield break;
-
-        var questions = new string[gaps.Count];
-        var aiGaps = new List<StoryCreationGapAnalyzer.Gap>();
-        var aiGapIndices = new List<int>();
-
-        for (int i = 0; i < gaps.Count; i++)
-        {
-            var gap = gaps[i];
-            if (gap.kind == StoryCreationGapAnalyzer.GapKind.OptionalStoryElement)
-            {
-                questions[i] = gap.fallbackQuestion;
-                continue;
-            }
-
-            aiGapIndices.Add(i);
-            aiGaps.Add(gap);
-        }
-
-        if (aiGaps.Count > 0 && useAiGeneratedQuestions)
-        {
-            var req = new StoryCreationVoiceGateway.StoryCreationQuestionsRequest
-            {
-                storyTitle = StorySessionCache.StoryTitle,
-                pageTitle = page?.pageTitle ?? "",
-                sceneGuideText = page?.sceneGuideText ?? "",
-                previousSummary = StorySessionCache.BuildPreviousPagesSummary(),
-                gaps = BuildGapDtos(aiGaps),
-            };
-
-            List<StoryCreationVoiceGateway.StoryCreationQuestion> remote = null;
-            string err = "";
-            yield return _voiceGateway.FetchQuestions(req, (qs, e) =>
-            {
-                remote = qs;
-                err = e;
-            });
-
-            if (remote != null && remote.Count >= aiGaps.Count)
-            {
-                for (int j = 0; j < aiGaps.Count; j++)
-                    questions[aiGapIndices[j]] = remote[j].text.Trim();
-            }
-            else
-            {
-                if (useAiGeneratedQuestions && !string.IsNullOrEmpty(err))
-                    Debug.LogWarning($"[StoryCreation] AI 提问生成失败，使用本地话术：{err}");
-                for (int j = 0; j < aiGaps.Count; j++)
-                    questions[aiGapIndices[j]] = aiGaps[j].fallbackQuestion;
-            }
-        }
-        else if (aiGaps.Count > 0)
-        {
-            for (int j = 0; j < aiGaps.Count; j++)
-                questions[aiGapIndices[j]] = aiGaps[j].fallbackQuestion;
-        }
-
-        for (int i = 0; i < questions.Length; i++)
-        {
-            string q = questions[i];
-            if (string.IsNullOrWhiteSpace(q))
-                q = gaps[i].fallbackQuestion;
-            outQuestions.Add(q.Trim());
-        }
-    }
-
     void ShowVoiceQuestionText(string question)
     {
         if (simplifiedUi)
@@ -1479,62 +1411,6 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         };
     }
 
-    static string BuildVoiceSupplement(
-        List<StoryCreationGapAnalyzer.Gap> gaps,
-        List<string> answers)
-    {
-        if (answers == null || answers.Count == 0)
-            return "";
-
-        var sb = new System.Text.StringBuilder();
-        int count = Mathf.Min(gaps.Count, answers.Count);
-        for (int i = 0; i < count; i++)
-        {
-            if (sb.Length > 0)
-                sb.Append(' ');
-            var gap = gaps[i];
-            if (gap.kind == StoryCreationGapAnalyzer.GapKind.CharacterBehavior &&
-                !string.IsNullOrWhiteSpace(gap.roleName))
-                sb.Append($"{gap.roleName}：{answers[i]}。");
-            else if (gap.kind == StoryCreationGapAnalyzer.GapKind.CharacterPosition)
-                sb.Append($"站位：{answers[i]}。");
-            else if (gap.kind == StoryCreationGapAnalyzer.GapKind.OptionalStoryElement)
-                sb.Append($"本页补充：{answers[i]}。");
-            else
-                sb.Append(answers[i]).Append('。');
-        }
-        return sb.ToString().Trim();
-    }
-
-    static string MergeGapAnswer(string existing, string chunk)
-    {
-        if (string.IsNullOrWhiteSpace(chunk))
-            return existing ?? "";
-        var piece = chunk.Trim();
-        if (string.IsNullOrWhiteSpace(existing))
-            return piece;
-        return $"{existing.Trim()}；{piece}";
-    }
-
-    static bool IsRedirectGapIntent(string intent)
-    {
-        if (string.IsNullOrWhiteSpace(intent))
-            return false;
-        var n = intent.Trim().ToLowerInvariant();
-        return n == "repeat_question" || n == "clarify" || n == "off_topic";
-    }
-
-    static bool ShouldTreatAsStoryFact(string intent, string answer)
-    {
-        if (string.IsNullOrWhiteSpace(answer))
-            return false;
-        if (IsRedirectGapIntent(intent))
-            return false;
-        if (ClassifyGapIntent(answer) != "answered")
-            return false;
-        return answer.Trim().Length >= 2;
-    }
-
     static string ClassifyGapIntent(string answer)
     {
         var t = LeleVoiceAssistant.Normalize(answer);
@@ -1577,69 +1453,11 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         return "answered";
     }
 
-    static StoryCreationVoiceGateway.StoryCreationReplyResult BuildLocalGapReplyFallback(
-        string answer,
-        string question,
-        string originalQuestion,
-        int turnIndex)
-    {
-        var intent = ClassifyGapIntent(answer);
-        var result = new StoryCreationVoiceGateway.StoryCreationReplyResult
-        {
-            intent = intent,
-            acknowledgement = intent switch
-            {
-                "repeat_question" => "好呀，乐乐再说一遍！",
-                "clarify" => "没关系，乐乐换个说法问你！",
-                "off_topic" => "哈哈，我们先把这个故事说完好不好？",
-                "incomplete" => "嗯嗯，再说一点点乐乐就懂啦！",
-                _ => "好的，我记住啦！",
-            },
-            followUpQuestion = "",
-            extractedAnswer = "",
-            conversationDone = false,
-        };
-
-        switch (intent)
-        {
-            case "repeat_question":
-            case "clarify":
-                result.followUpQuestion = string.IsNullOrWhiteSpace(question)
-                    ? originalQuestion
-                    : question;
-                break;
-            case "off_topic":
-                result.followUpQuestion = originalQuestion;
-                break;
-            case "incomplete":
-                result.followUpQuestion = question;
-                result.extractedAnswer = answer.Trim().Length >= 2 ? answer.Trim() : "";
-                break;
-            default:
-                result.extractedAnswer = answer.Trim();
-                result.conversationDone = true;
-                break;
-        }
-
-        if (turnIndex >= MaxTurnsPerGap - 1)
-        {
-            result.conversationDone = true;
-            if (string.IsNullOrWhiteSpace(result.extractedAnswer) &&
-                !IsRedirectGapIntent(intent))
-            {
-                result.extractedAnswer = answer.Trim();
-            }
-        }
-
-        return result;
-    }
-
     void BeginVoiceAnswerWindow()
     {
         _waitingForVoiceAnswer = true;
         _pendingVoiceTranscript = "";
         _pendingVoiceError = "";
-        _leleAwakeForCurrentQuestion = true;
     }
 
     void StartContinuousAnswerListeningIfVoiceMode()
@@ -1763,40 +1581,11 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         if (page == null)
             yield break;
 
-        SetStatus("换个说法，我们再编一次…");
-
-        var detectedIds = StoryPageGenerationPipeline.CollectDetectedMarkerIds(_arUcoDetector);
-        var validation = StoryPageGenerationPipeline.ValidateRequiredCharacters(page, detectedIds);
-        if (!validation.ok)
-        {
-            SetPhase(CreationPhase.Building);
-            SetStatus(StoryPageGenerationPipeline.FormatKidMissingMessage(
-                validation.missingIds,
-                _characterReferences));
-            yield break;
-        }
-
-        var markers = _arUcoDetector?.DetectedMarkers;
-        var gaps = StoryCreationGapAnalyzer.Analyze(
-            page,
-            markers,
-            _characterReferences,
-            _markerTaxonomy);
-
-        string voiceSupplement = "";
-        if (gaps.Count > 0)
-        {
-            SetPhase(CreationPhase.VoiceInteracting);
-            yield return RunVoiceInteractionCoroutine(page, gaps, result => voiceSupplement = result ?? "");
-            if (string.IsNullOrWhiteSpace(voiceSupplement))
-            {
-                SetPhase(CreationPhase.PageDone);
-                SetStatus("保留上一版绘本，可点「下一页」继续。");
-                yield break;
-            }
-        }
-
-        yield return GeneratePageImageCoroutine(page, validation, voiceSupplement, isRegenerate: true);
+        SetPhase(CreationPhase.Building);
+        _leleHost?.SetFreeChatEnabled(true);
+        _leleHost?.AppendLele("想换个说法？继续边玩边告诉乐乐，好了再点「这页摆好了」。");
+        SetStatus("");
+        yield break;
     }
 
     IEnumerator GeneratePageImageCoroutine(

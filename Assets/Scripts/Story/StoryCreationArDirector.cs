@@ -34,10 +34,18 @@ public class StoryCreationArDirector : MonoBehaviour
     readonly Dictionary<int, RosterRow> _rosterRows = new Dictionary<int, RosterRow>();
     readonly List<int> _requiredIds = new List<int>();
     readonly HashSet<int> _seenCharacterIds = new HashSet<int>();
+    readonly Dictionary<int, Vector2> _lastStickerPositions = new Dictionary<int, Vector2>();
+    readonly Dictionary<int, float> _lastMoveReactTime = new Dictionary<int, float>();
     bool _readyAnnounced;
+
+    const float MoveReactPixels = 72f;
+    const float MoveReactCooldownSeconds = 8f;
 
     /// <summary>新识别到一名角色时（仅首次）。</summary>
     public event Action<string> CharacterArrived;
+
+    /// <summary>角色在镜头里移动了较明显距离。</summary>
+    public event Action<string> CharacterMoved;
 
     /// <summary>本页所需角色全部到齐时（仅首次）。</summary>
     public event Action AllCharactersReady;
@@ -90,6 +98,8 @@ public class StoryCreationArDirector : MonoBehaviour
 
         RebuildRosterRows();
         _seenCharacterIds.Clear();
+        _lastStickerPositions.Clear();
+        _lastMoveReactTime.Clear();
         _readyAnnounced = false;
         UpdateRosterHint("把积木摆进右上角镜头里");
         SetReadyBannerVisible(false);
@@ -141,13 +151,14 @@ public class StoryCreationArDirector : MonoBehaviour
         UpdateRoster(detectedSet);
         UpdateStickers(_miniPreview, _miniStickerRoot, _miniStickers, detected, MiniStickerScale);
         UpdateStickers(_expandedPreview, _expandedStickerRoot, _expandedStickers, detected, 1f);
+        NotifyCharacterMoves(detected);
 
         bool ready = IsLayoutReady(detectedSet);
         SetReadyBannerVisible(ready);
         NotifyPlacementEvents(detectedSet);
 
         if (ready)
-            UpdateRosterHint("太棒了！伙伴都到齐啦，可以点「确认生成」");
+            UpdateRosterHint("太棒了！伙伴都到齐啦，可以点「这页摆好了」");
         else if (_requiredIds.Count > 0)
             UpdateRosterHint(BuildMissingHint(detectedSet));
         else if (detectedSet.Count == 0)
@@ -170,6 +181,46 @@ public class StoryCreationArDirector : MonoBehaviour
         {
             _readyAnnounced = true;
             AllCharactersReady?.Invoke();
+        }
+    }
+
+    void NotifyCharacterMoves(List<MarkerView> detected)
+    {
+        float now = Time.unscaledTime;
+        foreach (var marker in detected)
+        {
+            if (!_lastStickerPositions.TryGetValue(marker.id, out var prev))
+            {
+                _lastStickerPositions[marker.id] = marker.pixel;
+                continue;
+            }
+
+            float dist = Vector2.Distance(prev, marker.pixel);
+            _lastStickerPositions[marker.id] = marker.pixel;
+            if (dist < MoveReactPixels)
+                continue;
+
+            if (_lastMoveReactTime.TryGetValue(marker.id, out float last) &&
+                now - last < MoveReactCooldownSeconds)
+                continue;
+
+            _lastMoveReactTime[marker.id] = now;
+            CharacterMoved?.Invoke(marker.roleName);
+        }
+
+        var live = new HashSet<int>();
+        foreach (var marker in detected)
+            live.Add(marker.id);
+        var stale = new List<int>();
+        foreach (var id in _lastStickerPositions.Keys)
+        {
+            if (!live.Contains(id))
+                stale.Add(id);
+        }
+        foreach (int id in stale)
+        {
+            _lastStickerPositions.Remove(id);
+            _lastMoveReactTime.Remove(id);
         }
     }
 

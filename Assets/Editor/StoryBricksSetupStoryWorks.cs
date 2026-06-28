@@ -61,6 +61,10 @@ public static class StoryBricksSetupStoryWorks
         headerRt.offsetMin = new Vector2(0, -100);
         headerRt.offsetMax = Vector2.zero;
         var headerTmp = header.AddComponent<TextMeshProUGUI>();
+        var titleFont = Resources.Load<TMP_FontAsset>("UI/word SDF")
+                        ?? Resources.Load<TMP_FontAsset>("TutorialUi/word SDF");
+        if (titleFont != null)
+            headerTmp.font = titleFont;
         headerTmp.text = "故事作品集";
         headerTmp.fontSize = 40;
         headerTmp.alignment = TextAlignmentOptions.Center;

@@ -6,7 +6,7 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// 故事创作页常驻「乐乐」面板：摆放阶段自由对话；结构化问答时可暂停。
+/// 故事创作页常驻「乐乐」面板：边玩边听，摆好后一次复述确认。
 /// </summary>
 [DisallowMultipleComponent]
 public class StoryCreationLeleHost : MonoBehaviour
@@ -24,9 +24,11 @@ public class StoryCreationLeleHost : MonoBehaviour
     string _sceneGuideText = "";
     string _rosterHint = "";
     readonly StringBuilder _dialog = new StringBuilder();
+    readonly StringBuilder _storyDraft = new StringBuilder();
 
     public TutorialLelePanelView Panel => _panel;
     public bool IsFreeChatEnabled => _freeChatEnabled;
+    public string RosterHint => _rosterHint ?? "";
 
     public void Initialize(RectTransform canvasRoot, StoryCreationVoiceGateway gateway)
     {
@@ -38,7 +40,7 @@ public class StoryCreationLeleHost : MonoBehaviour
         _panel = TutorialLelePanelUiBuilder.Build(leleRoot);
 
         ResetDialog(
-            $"你好！我是{LeleVoiceAssistant.DisplayName}。摆积木时随时跟我说话；确认生成后我们一起编这一页的故事。");
+            $"你好！我是{LeleVoiceAssistant.DisplayName}。边摆积木边告诉我就行，摆好了点「这页摆好了」。");
     }
 
     public void SetPageContext(string storyTitle, string pageTitle, string sceneGuideText)
@@ -46,6 +48,7 @@ public class StoryCreationLeleHost : MonoBehaviour
         _storyTitle = storyTitle ?? "";
         _pageTitle = pageTitle ?? "";
         _sceneGuideText = sceneGuideText ?? "";
+        ClearStoryDraft();
     }
 
     public void SetRosterHint(string hint)
@@ -56,6 +59,7 @@ public class StoryCreationLeleHost : MonoBehaviour
     public void ResetDialog(string openingLine)
     {
         _dialog.Clear();
+        ClearStoryDraft();
         if (!string.IsNullOrWhiteSpace(openingLine))
             _dialog.AppendLine(openingLine.Trim());
         RefreshDialogOutput();
@@ -78,6 +82,30 @@ public class StoryCreationLeleHost : MonoBehaviour
     }
 
     public string BuildConversationLog() => _dialog.ToString();
+
+    public string GetStoryDraft() => _storyDraft.ToString().Trim();
+
+    public void ClearStoryDraft() => _storyDraft.Clear();
+
+    public void AppendStoryDraft(string line)
+    {
+        if (string.IsNullOrWhiteSpace(line))
+            return;
+        if (_storyDraft.Length > 0)
+            _storyDraft.AppendLine();
+        _storyDraft.Append(line.Trim());
+    }
+
+    public string BuildExtractConversationLog()
+    {
+        var draft = GetStoryDraft();
+        var dialog = BuildConversationLog();
+        if (string.IsNullOrWhiteSpace(draft))
+            return dialog;
+        if (string.IsNullOrWhiteSpace(dialog))
+            return draft;
+        return draft + "\n---\n" + dialog;
+    }
 
     public void SetStatus(string text)
     {
@@ -169,10 +197,10 @@ public class StoryCreationLeleHost : MonoBehaviour
         SetListenLabel("");
     }
 
-    void RefreshListeningUi()
+    public void RefreshListeningUi()
     {
         SetListenLabel(LeleVoiceAssistant.ListeningHint);
-        SetStatus("摆积木时可以随时跟乐乐说话");
+        SetStatus("边玩边说，乐乐都在听");
     }
 
     void UpdateListeningLabel(bool speaking)
@@ -223,6 +251,7 @@ public class StoryCreationLeleHost : MonoBehaviour
         }
 
         AppendChild(transcript);
+        AppendStoryDraft(transcript);
 
         var req = new StoryCreationVoiceGateway.StoryCreationFreeChatRequest
         {

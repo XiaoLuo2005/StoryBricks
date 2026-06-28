@@ -49,6 +49,16 @@ public static class StoryPageCaptionArt
         return Clamp(raw, maxChars);
     }
 
+    public static void EnsureChineseFont(TextMeshProUGUI tmp, TMP_FontAsset assigned = null)
+    {
+        if (tmp == null)
+            return;
+
+        var resolved = ResolveFont(assigned);
+        if (resolved != null)
+            tmp.font = resolved;
+    }
+
     public static void ApplyCaptionStyle(TextMeshProUGUI tmp, TMP_FontAsset font, int maxChars)
     {
         if (tmp == null)

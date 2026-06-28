@@ -72,7 +72,7 @@ public static class StoryCreationPageUiBuilder
 
         view.voiceGuideButton = CreateFloatingButton(root, "VoiceGuideButton", "播放引导", ActionButtonSize, false);
         view.rebuildButton = CreateFloatingButton(root, "RebuildButton", "重搭", new Vector2(120f, 72f), false);
-        view.confirmButton = CreateFloatingButton(root, "ConfirmButton", "确认生成", PrimaryButtonSize, true);
+        view.confirmButton = CreateFloatingButton(root, "ConfirmButton", "这页摆好了", PrimaryButtonSize, true);
         view.regenerateButton = CreateFloatingButton(root, "RegenerateButton", "重讲", new Vector2(120f, 72f), false);
         view.nextPageButton = CreateFloatingButton(root, "NextPageButton", "下一页", PrimaryButtonSize, true);
 

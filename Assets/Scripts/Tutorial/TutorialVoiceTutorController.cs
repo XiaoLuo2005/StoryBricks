@@ -196,7 +196,7 @@ public class TutorialVoiceTutorController : MonoBehaviour
 
         if (req.result != UnityWebRequest.Result.Success)
         {
-            onDone?.Invoke("", req.error);
+            onDone?.Invoke("", ParseAsrError(req.downloadHandler?.text, req.error));
             yield break;
         }
 
@@ -406,6 +406,18 @@ public class TutorialVoiceTutorController : MonoBehaviour
         if (string.IsNullOrEmpty(s))
             return "";
         return s.Replace("<", "‹");
+    }
+
+    static string ParseAsrError(string responseText, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(responseText))
+            return string.IsNullOrWhiteSpace(fallback) ? "识别失败" : fallback;
+
+        var resp = JsonUtility.FromJson<LeleAsrResponse>(responseText);
+        if (!string.IsNullOrWhiteSpace(resp?.error))
+            return StoryCreationVoiceGateway.FriendlyAsrError(resp.error.Trim());
+
+        return string.IsNullOrWhiteSpace(fallback) ? "识别失败" : fallback;
     }
 
     void FillTutorContextFields(TutorTextRequest r)

@@ -94,10 +94,14 @@ public class BrickPortfolioRoot : MonoBehaviour
             }
 
             if (headerTitleTextTmp != null)
+            {
+                StoryPageCaptionArt.EnsureChineseFont(headerTitleTextTmp);
                 headerTitleTextTmp.text = StorySelectionContext.Title;
+            }
         }
         else if (headerTitleTextTmp != null && !string.IsNullOrEmpty(headerTitle))
         {
+            StoryPageCaptionArt.EnsureChineseFont(headerTitleTextTmp);
             headerTitleTextTmp.text = headerTitle;
         }
 

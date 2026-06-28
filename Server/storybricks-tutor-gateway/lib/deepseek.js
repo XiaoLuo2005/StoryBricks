@@ -351,7 +351,8 @@ async function buildStoryCreationPageSummary(body) {
 async function buildStoryCreationFreeChat(body) {
   const system = `你是 3～8 岁儿童故事创作页的语音伙伴「乐乐」，孩子正在摆实体积木、看摄像头画面。
 规则：
-- 句子短（2～4 句），耐心鼓励，主要聊本页故事与积木摆放。
+- 句子短（2～4 句），耐心鼓励，像陪玩姐姐/哥哥，不是考官。
+- 孩子边摆边说时：先接话、重复你听到的关键词，再轻轻问一个开放小问（可选），不要按「第几题」形式提问。
 - 若孩子没听清、问「什么」「再说一遍」，简短解释或重复你上一句要点。
 - 若跑题（游戏、吃饭、无关闲聊），温柔回应一句再拉回本页故事或摆放。
 - 可提示缺谁、怎么摆，但不要代替孩子做决定。
@@ -374,6 +375,74 @@ async function buildStoryCreationFreeChat(body) {
     ],
     { temperature: 0.65, max_tokens: 280 },
   );
+}
+
+async function buildStoryCreationExtractPageStory(body) {
+  const system = `你是儿童故事创作助手「乐乐」。孩子边摆积木边零碎说话，你要从对话里整理「本页故事」，供绘本生图使用。
+
+## 输入
+- 对话记录（孩子+乐乐，可能很碎）
+- 本页场景、前情、镜头里有哪些角色
+- 期望缺口（角色行为/站位/可选元素）——仅作检查清单，不要逐条问卷
+
+## 输出（只输出 JSON，无 markdown）
+{
+  "voiceSupplement": "给生图用的连贯中文，80～180字，写清角色在做什么、相对位置、本页道具；优先用对话里已有内容，不足时用场景合理补全",
+  "recapLine": "给孩子听的口头复述，2～3句，「我听说是…」口吻，温暖简短",
+  "missingField": "none|behavior|position|element",
+  "followUpQuestion": "若仍缺某角色「在干什么」等关键事实，只写 ONE 开放式短问；够用了则空字符串",
+  "conversationDone": true/false
+}
+
+规则：
+- conversationDone=true 当 voiceSupplement 已能支撑画这一页（至少主要角色有行为）
+- followUpQuestion 最多问一件事，口语化，不要说「第2题」
+- 对话已有足够信息时 missingField=none，followUpQuestion 留空
+- 不要编造与场景、前情矛盾的剧情`;
+
+  const gaps = Array.isArray(body.gaps) ? body.gaps : [];
+  let gapBlock = "";
+  gaps.forEach((g, i) => {
+    gapBlock += `${i + 1}. kind=${g.kind || ""}; role=${g.roleName || ""}; hint=${g.fallbackQuestion || ""}\n`;
+  });
+
+  const user = [
+    body.storyTitle && `故事：${body.storyTitle}`,
+    body.pageTitle && `本页：${body.pageTitle}`,
+    body.sceneGuideText && `场景：${body.sceneGuideText}`,
+    body.previousSummary && `前情：${body.previousSummary}`,
+    body.rosterHint && `当前摆放：${body.rosterHint}`,
+    body.detectedRoles && `镜头角色：${body.detectedRoles}`,
+    gapBlock && `期望缺口：\n${gapBlock}`,
+    body.conversationLog && `对话记录：\n${body.conversationLog}`,
+    "",
+    "请整理本页故事 JSON。",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await deepseekChat(
+    [
+      { role: "system", content: system },
+      { role: "user", content: user || "请整理" },
+    ],
+    { temperature: 0.45, max_tokens: 720 },
+  );
+  const obj = parseJsonObject(raw, "extract-page-story");
+  const voiceSupplement = String(obj.voiceSupplement || "").trim();
+  const recapLine = String(obj.recapLine || "").trim();
+  const missingField = String(obj.missingField || "none").trim().toLowerCase();
+  const followUpQuestion = String(obj.followUpQuestion || "").trim();
+  let done = Boolean(obj.conversationDone);
+  if (voiceSupplement.length >= 12 && !followUpQuestion) done = true;
+  if (!voiceSupplement && !followUpQuestion) done = false;
+  return {
+    voiceSupplement,
+    recapLine: recapLine || voiceSupplement,
+    missingField,
+    followUpQuestion,
+    conversationDone: done,
+  };
 }
 
 async function buildStoryCreationWaitNarration(body) {
@@ -472,6 +541,7 @@ module.exports = {
   buildStoryCreationPageSummary,
   buildStoryCreationPageCaption,
   buildStoryCreationFreeChat,
+  buildStoryCreationExtractPageStory,
   buildStoryCreationWaitNarration,
   buildStoryCreationPageRecap,
   buildStoryCreationBranchHint,

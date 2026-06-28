@@ -225,7 +225,7 @@ public class StoryCreationVoiceGateway : MonoBehaviour
 
         if (result != UnityWebRequest.Result.Success)
         {
-            onDone?.Invoke("", reqError);
+            onDone?.Invoke("", ParseAsrError(responseText, reqError));
             yield break;
         }
 
@@ -237,6 +237,27 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         }
 
         onDone?.Invoke(resp.transcript?.Trim() ?? "", "");
+    }
+
+    static string ParseAsrError(string responseText, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(responseText))
+            return string.IsNullOrWhiteSpace(fallback) ? "识别失败" : fallback;
+
+        var resp = JsonUtility.FromJson<AsrResponse>(responseText);
+        if (!string.IsNullOrWhiteSpace(resp?.error))
+            return FriendlyAsrError(resp.error.Trim());
+
+        return string.IsNullOrWhiteSpace(fallback) ? "识别失败" : fallback;
+    }
+
+    public static string FriendlyAsrError(string serverError)
+    {
+        if (string.Equals(serverError, "empty transcription", StringComparison.OrdinalIgnoreCase))
+            return "没听清，请再说一次";
+        if (string.Equals(serverError, "missing audio file field", StringComparison.OrdinalIgnoreCase))
+            return "录音上传失败，请重试";
+        return serverError;
     }
 
     public IEnumerator TranscribeWav(byte[] wavBytes, Action<string, string> onDone)
@@ -451,6 +472,38 @@ public class StoryCreationVoiceGateway : MonoBehaviour
             yield break;
         }
         onDone?.Invoke(resp.reply?.Trim() ?? "", "");
+    }
+
+    public IEnumerator FetchExtractPageStory(
+        StoryCreationExtractRequest request,
+        Action<StoryCreationExtractResult, string> onDone)
+    {
+        CancelRequest();
+        var json = JsonUtility.ToJson(request ?? new StoryCreationExtractRequest());
+        var url = $"{GatewayBaseUrl}/api/story-creation/extract-page-story";
+        var req = PostJson(url, json);
+        _active = req;
+        yield return req.SendWebRequest();
+
+        if (!TryCompleteActiveRequest(req, out var result, out var reqError, out var responseText))
+        {
+            onDone?.Invoke(null, "已取消");
+            yield break;
+        }
+
+        if (result != UnityWebRequest.Result.Success)
+        {
+            onDone?.Invoke(null, reqError);
+            yield break;
+        }
+
+        var resp = JsonUtility.FromJson<StoryCreationExtractResult>(responseText);
+        if (resp == null || !string.IsNullOrEmpty(resp.error))
+        {
+            onDone?.Invoke(null, resp?.error ?? "故事整理失败");
+            yield break;
+        }
+        onDone?.Invoke(resp, "");
     }
 
     public IEnumerator FetchWaitNarration(
@@ -906,6 +959,30 @@ public class StoryCreationVoiceGateway : MonoBehaviour
     class FreeChatResponse
     {
         public string reply;
+        public string error;
+    }
+
+    [Serializable]
+    public class StoryCreationExtractRequest
+    {
+        public string storyTitle;
+        public string pageTitle;
+        public string sceneGuideText;
+        public string previousSummary;
+        public string rosterHint;
+        public string conversationLog;
+        public string detectedRoles;
+        public StoryCreationGapDto[] gaps;
+    }
+
+    [Serializable]
+    public class StoryCreationExtractResult
+    {
+        public string voiceSupplement;
+        public string recapLine;
+        public string missingField;
+        public string followUpQuestion;
+        public bool conversationDone;
         public string error;
     }
 
