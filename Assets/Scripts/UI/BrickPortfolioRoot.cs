@@ -36,7 +36,14 @@ public class BrickPortfolioRoot : MonoBehaviour
     [Header("模式")]
     public PortfolioKind portfolioKind = PortfolioKind.StoryLibrary;
 
-    [Header("场景里摆好的 UI")]
+    [Header("UI（Prefab / 场景可视化编辑）")]
+    public StoryLibraryPageView pageView;
+    public StoryLibraryPageView pageViewPrefab;
+    public bool allowRuntimeFallbackUi = true;
+    [Tooltip("勾选后运行时自动创建/重排导航按钮；关闭则保留场景里可视化编辑的布局")]
+    public bool applyRuntimeLayout = false;
+
+    [Header("场景里摆好的 UI（未用 pageView 时）")]
     public TextMeshProUGUI headerTitleTextTmp;
     public RectTransform cardListContent;
     public StoryCardView cardPrefab;
@@ -71,12 +78,14 @@ public class BrickPortfolioRoot : MonoBehaviour
     public string myStoriesSceneName = StoryFlowScenes.CompletedStoryLibrary;
 
     StoryCatalog _catalog;
+    bool _pageViewBound;
 
     void Awake()
     {
         if (portfolioKind == PortfolioKind.StoryLibrary)
             _catalog = GetComponent<StoryCatalog>();
 
+        BuildPageViewIfNeeded();
         TryCreateNavButtons();
         TryCreateStartCreationButton();
         TryCreateMyStoriesButton();
@@ -117,6 +126,99 @@ public class BrickPortfolioRoot : MonoBehaviour
             PopulateWorkCards(ResolveWorks());
     }
 
+    void BuildPageViewIfNeeded()
+    {
+        if (_pageViewBound)
+            return;
+
+        if (pageView != null && pageView.IsComplete)
+        {
+            ApplyPageViewBindings();
+            return;
+        }
+
+        if (pageView != null)
+        {
+            pageView.WireFromSceneHierarchy(cardListContent);
+            if (pageView.IsComplete)
+            {
+                ApplyPageViewBindings();
+                return;
+            }
+        }
+
+        if (TryAdoptScenePageView())
+        {
+            ApplyPageViewBindings();
+            return;
+        }
+
+        if (pageViewPrefab != null)
+        {
+            pageView = Instantiate(pageViewPrefab);
+            pageView.name = pageViewPrefab.name;
+            ApplyPageViewBindings();
+            return;
+        }
+
+        if (!allowRuntimeFallbackUi)
+            return;
+
+        var resourcesPrefab = Resources.Load<StoryLibraryPageView>(GetResourcesPagePrefabPath());
+        if (resourcesPrefab != null && cardListContent == null)
+        {
+            pageView = Instantiate(resourcesPrefab);
+            pageView.name = resourcesPrefab.name;
+            ApplyPageViewBindings();
+            return;
+        }
+
+        if (cardListContent != null)
+            return;
+
+        if (portfolioKind == PortfolioKind.BrickWorks)
+        {
+            pageView = StoryLibraryUiBuilder.BuildBrickLibraryPageView(null);
+            ApplyPageViewBindings();
+        }
+    }
+
+    bool TryAdoptScenePageView()
+    {
+        if (cardListContent == null && pageView == null)
+            return false;
+
+        if (pageView == null && cardListContent != null)
+        {
+            var canvas = cardListContent.GetComponentInParent<Canvas>();
+            if (canvas != null)
+                pageView = canvas.GetComponent<StoryLibraryPageView>();
+        }
+
+        if (pageView == null)
+            return false;
+
+        pageView.WireFromSceneHierarchy(cardListContent);
+        return pageView.IsComplete;
+    }
+
+    string GetResourcesPagePrefabPath()
+    {
+        return portfolioKind == PortfolioKind.BrickWorks
+            ? "UI/BrickLibraryPage"
+            : "UI/CompletedStoryLibraryPage";
+    }
+
+    void ApplyPageViewBindings()
+    {
+        if (pageView == null || !pageView.IsComplete)
+            return;
+
+        cardListContent = pageView.cardListContent;
+        headerTitleTextTmp = pageView.headerTitle;
+        _pageViewBound = true;
+    }
+
     void PopulateStoryLibrary()
     {
         var defs = ResolveStoryDefinitions();
@@ -137,7 +239,7 @@ public class BrickPortfolioRoot : MonoBehaviour
             count++;
         }
 
-        ResizeScrollContent(count);
+        StoryLibraryUiBuilder.ResizeScrollContent(cardListContent, count);
     }
 
     void PopulateWorkCards(BrickWorkItem[] items)
@@ -156,7 +258,7 @@ public class BrickPortfolioRoot : MonoBehaviour
             count++;
         }
 
-        ResizeScrollContent(count);
+        StoryLibraryUiBuilder.ResizeScrollContent(cardListContent, count);
     }
 
     StoryDefinition[] ResolveStoryDefinitions()
@@ -216,25 +318,21 @@ public class BrickPortfolioRoot : MonoBehaviour
         SceneManager.LoadScene(item.tutorialSceneName.Trim());
     }
 
-    void ResizeScrollContent(int itemCount)
-    {
-        var grid = cardListContent.GetComponent<GridLayoutGroup>();
-        if (grid == null)
-            return;
-        int columns = Mathf.Max(1, grid.constraint == GridLayoutGroup.Constraint.FixedColumnCount ? grid.constraintCount : 3);
-        int rows = itemCount <= 0 ? 1 : Mathf.CeilToInt(itemCount / (float)columns);
-        float h = grid.padding.top + grid.padding.bottom + rows * grid.cellSize.y + Mathf.Max(0, rows - 1) * grid.spacing.y;
-        cardListContent.sizeDelta = new Vector2(cardListContent.sizeDelta.x, h);
-    }
-
     void TryCreateNavButtons()
     {
         var canvas = cardListContent != null
             ? cardListContent.GetComponentInParent<Canvas>()
             : null;
+        canvas ??= pageView?.canvas;
         canvas ??= FindObjectOfType<Canvas>();
         if (canvas == null)
             return;
+
+        if (!applyRuntimeLayout)
+        {
+            WireExistingNavButtons(canvas);
+            return;
+        }
 
         int column = 0;
 
@@ -259,7 +357,17 @@ public class BrickPortfolioRoot : MonoBehaviour
                         : "← 返回封面",
                     _ => "← 返回",
                 };
-                StoryFlowBackButtonUi.EnsureTopLeft(canvas, label, sceneName);
+
+                if (pageView?.backButton != null)
+                {
+                    StoryFlowBackButtonUi.BindNavigation(pageView.backButton, label, sceneName);
+                    pageView.backButton.transform.SetAsLastSibling();
+                }
+                else
+                {
+                    StoryFlowBackButtonUi.EnsureTopLeft(canvas, label, sceneName);
+                }
+
                 column++;
             }
         }
@@ -277,6 +385,60 @@ public class BrickPortfolioRoot : MonoBehaviour
         }
     }
 
+    void WireExistingNavButtons(Canvas canvas)
+    {
+        if (showBackButton)
+        {
+            string sceneName = portfolioKind switch
+            {
+                PortfolioKind.StoryLibrary => storyLibraryBackSceneName,
+                PortfolioKind.StoryWorks => storyWorksBackSceneName,
+                PortfolioKind.BrickWorks => StorySelectionContext.ResolvePortfolioReturnScene(brickWorksBackSceneName),
+                _ => "",
+            };
+
+            if (!string.IsNullOrWhiteSpace(sceneName))
+            {
+                string label = portfolioKind switch
+                {
+                    PortfolioKind.StoryLibrary => "← 返回封面",
+                    PortfolioKind.StoryWorks => "← 返回故事库",
+                    PortfolioKind.BrickWorks => StorySelectionContext.HasStoryWorks
+                        ? "← 返回作品集"
+                        : "← 返回封面",
+                    _ => "← 返回",
+                };
+
+                var back = pageView?.backButton;
+                if (back == null)
+                {
+                    var backTf = canvas.transform.Find("BackButton");
+                    if (backTf != null)
+                        back = backTf.GetComponent<Button>();
+                }
+
+                if (back != null)
+                {
+                    StoryFlowBackButtonUi.BindNavigation(back, label, sceneName);
+                    back.transform.SetAsLastSibling();
+                }
+            }
+        }
+
+        if (portfolioKind != PortfolioKind.StoryWorks ||
+            !showBrickLibraryButton ||
+            string.IsNullOrWhiteSpace(brickLibrarySceneName))
+            return;
+
+        var brickTf = canvas.transform.Find("BrickLibraryButton");
+        if (brickTf == null)
+            return;
+
+        var brickBtn = brickTf.GetComponent<Button>();
+        if (brickBtn != null)
+            StoryFlowBackButtonUi.BindNavigation(brickBtn, brickLibraryButtonLabel, brickLibrarySceneName);
+    }
+
     void TryCreateStartCreationButton()
     {
         if (portfolioKind != PortfolioKind.StoryWorks ||
@@ -287,12 +449,26 @@ public class BrickPortfolioRoot : MonoBehaviour
         var canvas = cardListContent != null
             ? cardListContent.GetComponentInParent<Canvas>()
             : null;
+        canvas ??= pageView?.canvas;
         canvas ??= FindObjectOfType<Canvas>();
         if (canvas == null)
             return;
 
         var canvasRt = canvas.GetComponent<RectTransform>();
         var existing = canvasRt.Find("StartCreationButton");
+        if (existing == null)
+        {
+            if (!applyRuntimeLayout)
+                return;
+        }
+        else if (!applyRuntimeLayout)
+        {
+            var existingBtn = existing.GetComponent<Button>();
+            if (existingBtn != null)
+                WireStartCreationButton(existingBtn);
+            return;
+        }
+
         Button btn;
         if (existing != null)
         {
@@ -334,6 +510,14 @@ public class BrickPortfolioRoot : MonoBehaviour
             text.text = startCreationButtonLabel;
         }
 
+        WireStartCreationButton(btn);
+    }
+
+    void WireStartCreationButton(Button btn)
+    {
+        if (btn == null)
+            return;
+
         var labelText = btn.GetComponentInChildren<Text>();
         if (labelText != null)
             labelText.text = startCreationButtonLabel;
@@ -353,12 +537,26 @@ public class BrickPortfolioRoot : MonoBehaviour
         var canvas = cardListContent != null
             ? cardListContent.GetComponentInParent<Canvas>()
             : null;
+        canvas ??= pageView?.canvas;
         canvas ??= FindObjectOfType<Canvas>();
         if (canvas == null)
             return;
 
         var canvasRt = canvas.GetComponent<RectTransform>();
         var existing = canvasRt.Find("MyStoriesButton");
+        if (existing == null)
+        {
+            if (!applyRuntimeLayout)
+                return;
+        }
+        else if (!applyRuntimeLayout)
+        {
+            var existingBtn = existing.GetComponent<Button>();
+            if (existingBtn != null)
+                WireMyStoriesButton(existingBtn);
+            return;
+        }
+
         Button btn;
         if (existing != null)
         {
@@ -399,6 +597,14 @@ public class BrickPortfolioRoot : MonoBehaviour
             text.color = Color.white;
             text.text = myStoriesButtonLabel;
         }
+
+        WireMyStoriesButton(btn);
+    }
+
+    void WireMyStoriesButton(Button btn)
+    {
+        if (btn == null)
+            return;
 
         var labelText = btn.GetComponentInChildren<Text>();
         if (labelText != null)

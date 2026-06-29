@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.EventSystems;
@@ -210,6 +211,401 @@ public static class CompletedStoryRuntimeUi
         img.type = Image.Type.Simple;
         img.raycastTarget = false;
         return img;
+    }
+
+    public sealed class StoryReaderPanelRefs
+    {
+        public RectTransform root;
+        public TextMeshProUGUI storyText;
+        public Button recordButton;
+        public Button playButton;
+        public Button rerecordButton;
+        public Text statusText;
+        public Button closeButton;
+    }
+
+    public const float StoryReaderPanelBottom = 300f;
+    public const float StoryReaderPanelHeight = 300f;
+    public const float StoryReaderPanelLeft = 48f;
+    public const float StoryToggleGap = 12f;
+
+    public static StoryReaderPanelRefs CreateStoryReaderPanel(Transform parent)
+    {
+        var rootGo = CreateUiObject(parent, "StoryReaderPanel");
+        var rootRt = rootGo.GetComponent<RectTransform>();
+        rootRt.anchorMin = new Vector2(0f, 0f);
+        rootRt.anchorMax = new Vector2(0f, 0f);
+        rootRt.pivot = new Vector2(0f, 0f);
+        rootRt.sizeDelta = new Vector2(640f, StoryReaderPanelHeight);
+        rootRt.anchoredPosition = new Vector2(StoryReaderPanelLeft, StoryReaderPanelBottom);
+
+        var bg = rootGo.AddComponent<Image>();
+        bg.color = new Color32(255, 252, 245, 220);
+        bg.raycastTarget = true;
+
+        var closeButton = CreateStoryPanelCloseButton(rootGo.transform);
+
+        var storyText = CreateScrollableStoryText(
+            rootGo.transform,
+            "StoryTextScroll",
+            "StoryText",
+            0f,
+            0.34f,
+            1f,
+            1f,
+            new Vector2(20f, 0f),
+            new Vector2(-20f, -44f));
+        StoryPageCaptionArt.ApplyReaderCaptionStyle(storyText, StoryPageCaptionArt.ResolveFont(null));
+        storyText.text = "";
+
+        var rowGo = CreateUiObject(rootGo.transform, "VoiceRow");
+        var rowRt = rowGo.GetComponent<RectTransform>();
+        rowRt.anchorMin = new Vector2(0f, 0f);
+        rowRt.anchorMax = new Vector2(1f, 0f);
+        rowRt.pivot = new Vector2(0.5f, 0f);
+        rowRt.sizeDelta = new Vector2(-24f, 88f);
+        rowRt.anchoredPosition = new Vector2(0f, 12f);
+
+        var recordButton = CreateSmallActionButton(rowGo.transform, "RecordButton", "录音", 0f);
+        var playButton = CreateSmallActionButton(rowGo.transform, "PlayButton", "播放", 136f);
+        var rerecordButton = CreateSmallActionButton(rowGo.transform, "RerecordButton", "重录", 272f);
+
+        var statusGo = CreateUiObject(rowGo.transform, "Status");
+        var statusRt = statusGo.GetComponent<RectTransform>();
+        statusRt.anchorMin = new Vector2(0f, 0f);
+        statusRt.anchorMax = new Vector2(1f, 0f);
+        statusRt.pivot = new Vector2(0.5f, 0f);
+        statusRt.sizeDelta = new Vector2(0f, 28f);
+        statusRt.anchoredPosition = new Vector2(0f, 52f);
+        var statusText = statusGo.AddComponent<Text>();
+        statusText.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        statusText.fontSize = 20;
+        statusText.alignment = TextAnchor.MiddleLeft;
+        statusText.color = StoryPageCaptionArt.BodyBrownColor;
+        statusText.text = "让我们一起阅读吧~";
+
+        return new StoryReaderPanelRefs
+        {
+            root = rootRt,
+            storyText = storyText,
+            recordButton = recordButton,
+            playButton = playButton,
+            rerecordButton = rerecordButton,
+            statusText = statusText,
+            closeButton = closeButton,
+        };
+    }
+
+    public static Button CreateStoryPanelCloseButton(Transform panelRoot, string label = "收起")
+    {
+        var go = CreateUiObject(panelRoot, "StoryCloseButton");
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(1f, 1f);
+        rt.anchorMax = new Vector2(1f, 1f);
+        rt.pivot = new Vector2(1f, 1f);
+        rt.sizeDelta = new Vector2(96f, 40f);
+        rt.anchoredPosition = new Vector2(-10f, -10f);
+
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(255, 255, 255, 235);
+        var button = go.AddComponent<Button>();
+        button.targetGraphic = img;
+
+        var labelGo = CreateUiObject(go.transform, "Label");
+        StretchFull(labelGo.GetComponent<RectTransform>());
+        var text = labelGo.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 22;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = StoryPageCaptionArt.BodyBrownColor;
+        text.text = label;
+        return button;
+    }
+
+    public static Vector2 GetStoryToggleAnchoredPosition()
+    {
+        return new Vector2(
+            StoryReaderPanelLeft,
+            StoryReaderPanelBottom + StoryReaderPanelHeight + StoryToggleGap);
+    }
+
+    public static void ApplyStoryToggleLayout(RectTransform toggleRt)
+    {
+        if (toggleRt == null)
+            return;
+
+        toggleRt.anchorMin = new Vector2(0f, 0f);
+        toggleRt.anchorMax = new Vector2(0f, 0f);
+        toggleRt.pivot = new Vector2(0f, 0f);
+        toggleRt.anchoredPosition = GetStoryToggleAnchoredPosition();
+    }
+
+    public static Button CreateStoryToggleButton(Transform parent, string label = "故事阅读")
+    {
+        var go = CreateUiObject(parent, "StoryToggleButton");
+        var rt = go.GetComponent<RectTransform>();
+        rt.sizeDelta = new Vector2(168f, 64f);
+        ApplyStoryToggleLayout(rt);
+
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(255, 252, 245, 235);
+        var button = go.AddComponent<Button>();
+        button.targetGraphic = img;
+
+        var labelGo = CreateUiObject(go.transform, "Label");
+        StretchFull(labelGo.GetComponent<RectTransform>());
+        var text = labelGo.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 26;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = StoryPageCaptionArt.BodyBrownColor;
+        text.text = label;
+        return button;
+    }
+
+    public static void SetStoryToggleLabel(Button button, string label)
+    {
+        if (button == null)
+            return;
+        var text = button.GetComponentInChildren<Text>();
+        if (text != null)
+            text.text = label ?? "";
+    }
+
+    public static TextMeshProUGUI ResolveScrollableStoryText(
+        Transform panelRoot,
+        string scrollName,
+        string textName)
+    {
+        if (panelRoot == null)
+            return null;
+
+        var scroll = panelRoot.Find(scrollName);
+        if (scroll != null)
+        {
+            var nested = scroll.Find($"Viewport/Content/{textName}");
+            if (nested != null)
+                return nested.GetComponent<TextMeshProUGUI>();
+
+            nested = scroll.Find(textName);
+            if (nested != null)
+                return nested.GetComponent<TextMeshProUGUI>();
+        }
+
+        var direct = panelRoot.Find(textName);
+        return direct != null ? direct.GetComponent<TextMeshProUGUI>() : null;
+    }
+
+    /// <summary>修正手动搭建的 ScrollRect，使文字在框内换行并被 Viewport 裁剪。</summary>
+    public static void EnsureScrollableStoryTextLayout(TextMeshProUGUI tmp)
+    {
+        if (tmp == null)
+            return;
+
+        var scroll = tmp.GetComponentInParent<ScrollRect>();
+        if (scroll == null)
+            return;
+
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+
+        var viewport = scroll.viewport;
+        if (viewport == null)
+        {
+            var viewportTf = scroll.transform.Find("Viewport");
+            if (viewportTf != null)
+                viewport = viewportTf.GetComponent<RectTransform>();
+        }
+
+        if (viewport == null)
+            return;
+
+        StretchFull(viewport);
+        EnsureViewportClipping(viewport);
+        scroll.viewport = viewport;
+
+        var content = scroll.content;
+        if (content == null)
+        {
+            var contentTf = viewport.Find("Content");
+            if (contentTf == null)
+            {
+                var contentGo = CreateUiObject(viewport, "Content");
+                content = contentGo.GetComponent<RectTransform>();
+            }
+            else
+            {
+                content = contentTf.GetComponent<RectTransform>();
+            }
+        }
+
+        if (tmp.transform.parent != content)
+            tmp.transform.SetParent(content, false);
+
+        scroll.content = content;
+
+        content.anchorMin = new Vector2(0f, 1f);
+        content.anchorMax = new Vector2(1f, 1f);
+        content.pivot = new Vector2(0.5f, 1f);
+        content.anchoredPosition = Vector2.zero;
+        content.offsetMin = new Vector2(0f, content.offsetMin.y);
+        content.offsetMax = new Vector2(0f, content.offsetMax.y);
+
+        var contentFitter = content.GetComponent<ContentSizeFitter>();
+        if (contentFitter == null)
+            contentFitter = content.gameObject.AddComponent<ContentSizeFitter>();
+        contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var textRt = tmp.rectTransform;
+        textRt.anchorMin = new Vector2(0f, 1f);
+        textRt.anchorMax = new Vector2(1f, 1f);
+        textRt.pivot = new Vector2(0.5f, 1f);
+        textRt.anchoredPosition = Vector2.zero;
+        textRt.offsetMin = new Vector2(0f, textRt.offsetMin.y);
+        textRt.offsetMax = new Vector2(0f, textRt.offsetMax.y);
+
+        var textFitter = textRt.GetComponent<ContentSizeFitter>();
+        if (textFitter == null)
+            textFitter = textRt.gameObject.AddComponent<ContentSizeFitter>();
+        textFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        textFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var textLayout = textRt.GetComponent<LayoutElement>();
+        if (textLayout != null)
+        {
+            textLayout.minWidth = -1f;
+            textLayout.preferredWidth = -1f;
+            textLayout.flexibleWidth = -1f;
+        }
+
+        tmp.enableWordWrapping = true;
+        tmp.enableAutoSizing = false;
+        tmp.overflowMode = TextOverflowModes.Overflow;
+
+        Canvas.ForceUpdateCanvases();
+
+        var viewportWidth = viewport.rect.width;
+        if (viewportWidth > 1f)
+            content.SetSizeWithCurrentAnchors(RectTransform.Axis.Horizontal, viewportWidth);
+
+        tmp.ForceMeshUpdate(true);
+        LayoutRebuilder.ForceRebuildLayoutImmediate(content);
+    }
+
+    static void EnsureViewportClipping(RectTransform viewport)
+    {
+        var legacyMask = viewport.GetComponent<Mask>();
+        if (legacyMask != null)
+            legacyMask.enabled = false;
+
+        if (viewport.GetComponent<RectMask2D>() == null)
+            viewport.gameObject.AddComponent<RectMask2D>();
+    }
+
+    public static TextMeshProUGUI CreateScrollableStoryText(
+        Transform parent,
+        string scrollObjectName,
+        string textObjectName,
+        float anchorMinX,
+        float anchorMinY,
+        float anchorMaxX,
+        float anchorMaxY,
+        Vector2 offsetMin,
+        Vector2 offsetMax)
+    {
+        var scrollGo = CreateUiObject(parent, scrollObjectName);
+        var scrollRt = scrollGo.GetComponent<RectTransform>();
+        scrollRt.anchorMin = new Vector2(anchorMinX, anchorMinY);
+        scrollRt.anchorMax = new Vector2(anchorMaxX, anchorMaxY);
+        scrollRt.offsetMin = offsetMin;
+        scrollRt.offsetMax = offsetMax;
+
+        var scroll = scrollGo.AddComponent<ScrollRect>();
+        scroll.horizontal = false;
+        scroll.vertical = true;
+        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.scrollSensitivity = 28f;
+
+        var viewport = CreateUiObject(scrollGo.transform, "Viewport");
+        StretchFull(viewport.GetComponent<RectTransform>());
+        var viewportImg = viewport.AddComponent<Image>();
+        viewportImg.color = new Color(1f, 1f, 1f, 0.01f);
+        viewportImg.raycastTarget = true;
+        viewport.AddComponent<RectMask2D>();
+
+        var contentGo = CreateUiObject(viewport.transform, "Content");
+        var contentRt = contentGo.GetComponent<RectTransform>();
+        contentRt.anchorMin = new Vector2(0f, 1f);
+        contentRt.anchorMax = new Vector2(1f, 1f);
+        contentRt.pivot = new Vector2(0.5f, 1f);
+        contentRt.anchoredPosition = Vector2.zero;
+        contentRt.sizeDelta = new Vector2(0f, 0f);
+
+        var contentFitter = contentGo.AddComponent<ContentSizeFitter>();
+        contentFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        contentFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var textGo = CreateUiObject(contentGo.transform, textObjectName);
+        var textRt = textGo.GetComponent<RectTransform>();
+        textRt.anchorMin = new Vector2(0f, 1f);
+        textRt.anchorMax = new Vector2(1f, 1f);
+        textRt.pivot = new Vector2(0.5f, 1f);
+        textRt.anchoredPosition = Vector2.zero;
+        textRt.sizeDelta = new Vector2(0f, 0f);
+
+        var textFitter = textGo.AddComponent<ContentSizeFitter>();
+        textFitter.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
+        textFitter.verticalFit = ContentSizeFitter.FitMode.PreferredSize;
+
+        var tmp = textGo.AddComponent<TextMeshProUGUI>();
+
+        scroll.viewport = viewport.GetComponent<RectTransform>();
+        scroll.content = contentRt;
+
+        return tmp;
+    }
+
+    public static void ResetStoryTextScroll(TextMeshProUGUI tmp)
+    {
+        if (tmp == null)
+            return;
+
+        EnsureScrollableStoryTextLayout(tmp);
+
+        var scroll = tmp.GetComponentInParent<ScrollRect>();
+        if (scroll == null)
+            return;
+
+        Canvas.ForceUpdateCanvases();
+        scroll.verticalNormalizedPosition = 1f;
+    }
+
+    static Button CreateSmallActionButton(Transform parent, string name, string label, float x)
+    {
+        var go = CreateUiObject(parent, name);
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 0f);
+        rt.anchorMax = new Vector2(0f, 0f);
+        rt.pivot = new Vector2(0f, 0f);
+        rt.sizeDelta = new Vector2(120f, 44f);
+        rt.anchoredPosition = new Vector2(x, 0f);
+
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(255, 255, 255, 235);
+        var button = go.AddComponent<Button>();
+        button.targetGraphic = img;
+
+        var labelGo = CreateUiObject(go.transform, "Label");
+        StretchFull(labelGo.GetComponent<RectTransform>());
+        var text = labelGo.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 22;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = StoryPageCaptionArt.BodyBrownColor;
+        text.text = label;
+        return button;
     }
 
     public static Text CreateBottomCaption(Transform parent, Font font)

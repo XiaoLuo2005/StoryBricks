@@ -376,6 +376,7 @@ MonoBehaviour:
   canvas: {fileID: 3940339287757442037}
   decorRoot: {fileID: 0}
   headerTitle: {fileID: 7743201656356884365}
+  headerTitleImage: {fileID: 0}
   scrollRect: {fileID: 1208407261346784120}
   cardListContent: {fileID: 4652862523848741253}
   emptyHint: {fileID: 2098832468324892762}

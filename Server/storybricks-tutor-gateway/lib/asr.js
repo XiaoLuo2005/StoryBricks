@@ -113,18 +113,21 @@ async function transcribeWavBuffer(buffer, fields = {}) {
   return { transcript, rawTranscript: transcript };
 }
 
-/** 故事创作专用：ASR 后只用角色/缺口类型润色，不传完整提问。 */
+/** 故事创作专用：ASR 后可选 DeepSeek 润色。fast=true 时直接返回识别原文。 */
 async function transcribeStoryCreationWavBuffer(buffer, fields = {}) {
+  const fast = String(fields.fast || "").toLowerCase() === "true";
   const { transcript: raw } = await transcribeWavBuffer(buffer, { refineWithDeepSeek: "false" });
   if (!raw) return { transcript: "", rawTranscript: "" };
 
-  if (hasDeepSeek()) {
-    try {
-      const refined = await refineStoryCreationAnswer(raw, fields);
-      return { transcript: refined || raw, rawTranscript: raw };
-    } catch (e) {
-      console.warn("[asr] 故事创作 DeepSeek 润色失败，使用 ASR 原文:", e.message);
-    }
+  if (fast || !hasDeepSeek()) {
+    return { transcript: raw, rawTranscript: raw };
+  }
+
+  try {
+    const refined = await refineStoryCreationAnswer(raw, fields);
+    return { transcript: refined || raw, rawTranscript: raw };
+  } catch (e) {
+    console.warn("[asr] 故事创作 DeepSeek 润色失败，使用 ASR 原文:", e.message);
   }
 
   return { transcript: raw, rawTranscript: raw };

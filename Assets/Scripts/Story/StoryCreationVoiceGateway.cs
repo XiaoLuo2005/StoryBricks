@@ -22,6 +22,7 @@ public class StoryCreationVoiceGateway : MonoBehaviour
     bool _micRecording;
     UnityWebRequest _active;
     ContinuousVoiceListener _continuousListener;
+    bool _answerListeningStarted;
 
     public string GatewayBaseUrl
     {
@@ -57,11 +58,16 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         StopMicIfAny();
         if (_continuousListener == null)
             return false;
-        return _continuousListener.StartListening(onUtterance, onError, onSpeakingChanged);
+        _continuousListener.ApplyAssistantProfile();
+        _answerListeningStarted = _continuousListener.StartListening(onUtterance, onError, onSpeakingChanged);
+        return _answerListeningStarted;
     }
 
     public void StopAnswerListening()
     {
+        if (!_answerListeningStarted)
+            return;
+        _answerListeningStarted = false;
         _continuousListener?.StopListening();
     }
 
@@ -124,6 +130,8 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         if (_audio != null && _audio.isPlaying)
             _audio.Stop();
     }
+
+    public bool IsSpeaking => _audio != null && _audio.isPlaying;
 
     bool ShouldResumeListeningAfterSpeak()
     {
@@ -193,6 +201,78 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         onDone?.Invoke(true, "");
     }
 
+    /// <summary>播放 gateway 返回的 base64 音频（如 /api/tutor/voice 的 TTS）。</summary>
+    public IEnumerator PlayAudioFromBase64(string b64, string format, Action<bool, string> onDone = null)
+    {
+        if (string.IsNullOrEmpty(b64))
+        {
+            onDone?.Invoke(false, "无音频数据");
+            yield break;
+        }
+
+        bool resumeListeningAfter = ShouldResumeListeningAfterSpeak();
+        if (resumeListeningAfter)
+            PauseAnswerListening();
+
+        byte[] bytes;
+        try
+        {
+            bytes = Convert.FromBase64String(b64);
+        }
+        catch (Exception e)
+        {
+            ResumeListeningIfNeeded(resumeListeningAfter);
+            onDone?.Invoke(false, e.Message);
+            yield break;
+        }
+
+        StopPlayback();
+
+        string detected = DetectAudioFormat(bytes);
+        string preferred = string.IsNullOrWhiteSpace(format) ? detected : format.Trim();
+        bool played = false;
+
+        yield return TryPlayAudioBytes(bytes, preferred, ok => played = ok);
+        if (!played && !string.Equals(preferred, detected, StringComparison.OrdinalIgnoreCase))
+            yield return TryPlayAudioBytes(bytes, detected, ok => played = ok);
+        if (!played && !string.Equals(preferred, "mp3", StringComparison.OrdinalIgnoreCase))
+            yield return TryPlayAudioBytes(bytes, "mp3", ok => played = ok);
+
+        if (played && _audio != null && _audio.isPlaying)
+            yield return new WaitWhile(() => _audio != null && _audio.isPlaying);
+
+        ResumeListeningIfNeeded(resumeListeningAfter);
+        onDone?.Invoke(played, played ? "" : "音频播放失败");
+    }
+
+    static string DetectAudioFormat(byte[] bytes)
+    {
+        if (bytes == null || bytes.Length < 4)
+            return "wav";
+
+        if (bytes[0] == (byte)'R' && bytes[1] == (byte)'I' && bytes[2] == (byte)'F' && bytes[3] == (byte)'F')
+            return "wav";
+
+        if (bytes[0] == (byte)'I' && bytes[1] == (byte)'D' && bytes[2] == (byte)'3')
+            return "mp3";
+
+        if (bytes.Length >= 2 && bytes[0] == 0xFF && (bytes[1] & 0xE0) == 0xE0)
+            return "mp3";
+
+        return "wav";
+    }
+
+    IEnumerator TryPlayAudioBytes(byte[] bytes, string format, Action<bool> onDone)
+    {
+        if (string.Equals(format, "mp3", StringComparison.OrdinalIgnoreCase))
+        {
+            yield return PlayMp3Bytes(bytes, onDone);
+            yield break;
+        }
+
+        yield return PlayWavBytes(bytes, onDone);
+    }
+
     public IEnumerator TranscribeWav(byte[] wavBytes, AsrContext context, Action<string, string> onDone)
     {
         if (wavBytes == null || wavBytes.Length == 0)
@@ -210,6 +290,8 @@ public class StoryCreationVoiceGateway : MonoBehaviour
                 form.AddField("gapKind", context.gapKind);
             if (!string.IsNullOrWhiteSpace(context.roleName))
                 form.AddField("roleName", context.roleName);
+            if (context.fast)
+                form.AddField("fast", "true");
         }
 
         var url = $"{GatewayBaseUrl}/api/story-creation/asr";
@@ -681,12 +763,18 @@ public class StoryCreationVoiceGateway : MonoBehaviour
 
     IEnumerator PlayAudioBase64(string b64, string format)
     {
-        if (string.Equals(format, "mp3", StringComparison.OrdinalIgnoreCase))
+        byte[] bytes;
+        try
         {
-            yield return PlayMp3Base64(b64);
+            bytes = Convert.FromBase64String(b64);
+        }
+        catch (Exception e)
+        {
+            Debug.LogWarning($"[StoryCreationVoice] 音频解码失败: {e.Message}");
             yield break;
         }
-        yield return PlayWavBase64(b64);
+
+        yield return TryPlayAudioBytes(bytes, format, null);
     }
 
     IEnumerator PlayMp3Base64(string b64)
@@ -702,6 +790,17 @@ public class StoryCreationVoiceGateway : MonoBehaviour
             yield break;
         }
 
+        yield return PlayMp3Bytes(bytes, null);
+    }
+
+    IEnumerator PlayMp3Bytes(byte[] bytes, Action<bool> onDone)
+    {
+        if (bytes == null || bytes.Length == 0)
+        {
+            onDone?.Invoke(false);
+            yield break;
+        }
+
         var path = Path.Combine(Application.temporaryCachePath, $"story_tts_{DateTime.UtcNow.Ticks}.mp3");
         try
         {
@@ -711,16 +810,24 @@ public class StoryCreationVoiceGateway : MonoBehaviour
             if (req.result != UnityWebRequest.Result.Success)
             {
                 Debug.LogWarning($"[StoryCreationVoice] MP3 播放失败: {req.error}");
+                onDone?.Invoke(false);
                 yield break;
             }
+
             var clip = DownloadHandlerAudioClip.GetContent(req);
             if (clip == null)
+            {
+                onDone?.Invoke(false);
                 yield break;
+            }
+
             _audio.Stop();
             _audio.clip = clip;
             _audio.Play();
+            onDone?.Invoke(_audio.isPlaying);
             yield return new WaitWhile(() => _audio.isPlaying);
             Destroy(clip);
+            _audio.clip = null;
         }
         finally
         {
@@ -742,17 +849,34 @@ public class StoryCreationVoiceGateway : MonoBehaviour
             yield break;
         }
 
-        if (bytes.Length < 44)
+        yield return PlayWavBytes(bytes, null);
+    }
+
+    IEnumerator PlayWavBytes(byte[] bytes, Action<bool> onDone)
+    {
+        if (bytes == null || bytes.Length < 44)
+        {
+            onDone?.Invoke(false);
             yield break;
+        }
 
         int channels = BitConverter.ToInt16(bytes, 22);
         int sampleRate = BitConverter.ToInt32(bytes, 24);
         int bits = BitConverter.ToInt16(bytes, 34);
         if (channels <= 0 || sampleRate <= 0 || bits != 16)
+        {
+            onDone?.Invoke(false);
             yield break;
+        }
 
         int dataStart = 44;
         int sampleCount = (bytes.Length - dataStart) / (channels * 2);
+        if (sampleCount <= 0)
+        {
+            onDone?.Invoke(false);
+            yield break;
+        }
+
         var samples = new float[sampleCount];
         for (int i = 0; i < sampleCount; i++)
         {
@@ -765,8 +889,10 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         _audio.Stop();
         _audio.clip = clip;
         _audio.Play();
+        onDone?.Invoke(_audio.isPlaying);
         yield return new WaitWhile(() => _audio.isPlaying);
         Destroy(clip);
+        _audio.clip = null;
     }
 
     static float[] DownmixToMono(float[] interleaved, int channels)
@@ -819,6 +945,8 @@ public class StoryCreationVoiceGateway : MonoBehaviour
     {
         public string gapKind;
         public string roleName;
+        /// <summary>为 true 时跳过 DeepSeek 润色，更快出字（边玩边说/教程）。</summary>
+        public bool fast;
     }
 
     [Serializable]
@@ -870,6 +998,7 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         public string previousSummary;
         public string voiceSupplement;
         public string detectedRolesDescription;
+        public string mandatoryRolesClause;
         public string referenceImageClause;
         public bool isContinuationPage;
     }
@@ -970,6 +1099,7 @@ public class StoryCreationVoiceGateway : MonoBehaviour
         public string sceneGuideText;
         public string previousSummary;
         public string rosterHint;
+        public string arucoPlacement;
         public string conversationLog;
         public string detectedRoles;
         public StoryCreationGapDto[] gaps;

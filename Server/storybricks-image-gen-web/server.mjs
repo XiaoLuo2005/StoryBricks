@@ -15,6 +15,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { handleGenerate } from "./dashscope-generate.mjs";
+import { handleGeneratePanorama } from "./dashscope-panorama-generate.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const HOST = (process.env.HOST || "0.0.0.0").trim();
@@ -94,6 +95,7 @@ const server = http.createServer(async (req, res) => {
       has_api_key: !!(process.env.DASHSCOPE_API_KEY || "").trim(),
       dashscope_key_suffix: dashKeySuffix(),
       supports_reference_images: true,
+      supports_panorama_360: true,
     });
     return;
   }
@@ -126,6 +128,28 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === "POST" && url.pathname === "/generate-panorama") {
+    let bodyBuf;
+    try {
+      bodyBuf = await readBody(req);
+    } catch (e) {
+      sendJson(res, 413, { detail: String(e.message || e) });
+      return;
+    }
+
+    let body = {};
+    try {
+      body = bodyBuf.length ? JSON.parse(bodyBuf.toString("utf8")) : {};
+    } catch {
+      sendJson(res, 400, { detail: "Invalid JSON body" });
+      return;
+    }
+
+    const { status, json } = await handleGeneratePanorama(body);
+    sendJson(res, status, json);
+    return;
+  }
+
   if (req.method === "GET" && (url.pathname === "/" || url.pathname === "/index.html")) {
     const htmlPath = path.join(__dirname, "index.html");
     if (fs.existsSync(htmlPath)) {
@@ -141,6 +165,7 @@ const server = http.createServer(async (req, res) => {
 
 server.listen(PORT, HOST, () => {
   console.log(`StoryBricks image-gen server: http://${HOST}:${PORT}/generate`);
+  console.log(`Panorama 360: POST http://${HOST}:${PORT}/generate-panorama`);
   console.log(`Health: http://${HOST}:${PORT}/health`);
   const suffix = dashKeySuffix();
   if (suffix) {

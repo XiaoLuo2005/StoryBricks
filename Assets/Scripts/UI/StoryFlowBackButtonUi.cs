@@ -21,6 +21,17 @@ public static class StoryFlowBackButtonUi
 
     public static Button EnsureTopLeft(Canvas canvas, string objectName, string label, string sceneName, int columnIndex)
     {
+        return EnsureTopLeft(canvas, objectName, label, sceneName, columnIndex, preserveLayout: false);
+    }
+
+    public static Button EnsureTopLeft(
+        Canvas canvas,
+        string objectName,
+        string label,
+        string sceneName,
+        int columnIndex,
+        bool preserveLayout)
+    {
         if (canvas == null || string.IsNullOrWhiteSpace(sceneName))
             return null;
 
@@ -31,7 +42,8 @@ public static class StoryFlowBackButtonUi
             var existingBtn = existing.GetComponent<Button>();
             if (existingBtn != null)
             {
-                LayoutTopLeft(existing.GetComponent<RectTransform>(), columnIndex);
+                if (!preserveLayout)
+                    LayoutTopLeft(existing.GetComponent<RectTransform>(), columnIndex);
                 Wire(existingBtn, label, sceneName);
                 existing.SetAsLastSibling();
                 return existingBtn;

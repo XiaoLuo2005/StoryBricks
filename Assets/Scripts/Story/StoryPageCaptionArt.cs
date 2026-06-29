@@ -9,6 +9,8 @@ public static class StoryPageCaptionArt
 
     static TMP_FontAsset _cachedFont;
 
+    public static Color BodyBrownColor => TutorialUiArt.BodyBrown;
+
     public static TMP_FontAsset ResolveFont(TMP_FontAsset assigned = null)
     {
         if (assigned != null)
@@ -20,6 +22,10 @@ public static class StoryPageCaptionArt
         _cachedFont = Resources.Load<TMP_FontAsset>(PreferredFontResourcePath)
                       ?? Resources.Load<TMP_FontAsset>("UI/word SDF")
                       ?? Resources.Load<TMP_FontAsset>("TutorialUi/word SDF");
+#if UNITY_EDITOR
+        if (_cachedFont == null)
+            _cachedFont = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Art/word SDF.asset");
+#endif
         return _cachedFont;
     }
 
@@ -70,12 +76,44 @@ public static class StoryPageCaptionArt
 
         tmp.enableWordWrapping = true;
         tmp.overflowMode = TextOverflowModes.Ellipsis;
-        tmp.fontSize = 32f;
-        tmp.lineSpacing = 4f;
-        tmp.alignment = TextAlignmentOptions.MidlineLeft;
-        tmp.color = new Color32(255, 252, 245, 255);
-        tmp.outlineWidth = 0.22f;
-        tmp.outlineColor = new Color32(40, 28, 18, 200);
+        tmp.fontSize = 30f;
+        tmp.lineSpacing = 6f;
+        tmp.alignment = TextAlignmentOptions.BottomLeft;
+        tmp.color = BodyBrownColor;
+        tmp.outlineWidth = 0f;
         tmp.characterSpacing = 0.5f;
+        tmp.raycastTarget = false;
+    }
+
+    public static void ApplyReaderCaptionStyle(TextMeshProUGUI tmp, TMP_FontAsset font)
+    {
+        ApplyScrollableStoryTextStyle(tmp, font, 32f, TextAlignmentOptions.TopLeft);
+    }
+
+    public static void ApplyScrollableStoryTextStyle(
+        TextMeshProUGUI tmp,
+        TMP_FontAsset font,
+        float fontSize,
+        TextAlignmentOptions alignment)
+    {
+        if (tmp == null)
+            return;
+
+        var resolved = ResolveFont(font);
+        if (resolved != null)
+            tmp.font = resolved;
+
+        tmp.enableWordWrapping = true;
+        tmp.enableAutoSizing = false;
+        tmp.overflowMode = TextOverflowModes.Overflow;
+        tmp.fontSize = fontSize;
+        tmp.lineSpacing = 6f;
+        tmp.alignment = alignment;
+        tmp.color = BodyBrownColor;
+        tmp.outlineWidth = 0f;
+        tmp.characterSpacing = 0.5f;
+        tmp.raycastTarget = false;
+
+        CompletedStoryRuntimeUi.EnsureScrollableStoryTextLayout(tmp);
     }
 }

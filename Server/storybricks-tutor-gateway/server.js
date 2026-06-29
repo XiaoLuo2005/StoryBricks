@@ -14,7 +14,7 @@ const http = require("http");
 const Busboy = require("busboy");
 const cfg = require("./lib/config");
 const deepseek = require("./lib/deepseek");
-const { ttsToAudioBase64 } = require("./lib/tts");
+const { ttsToAudioBase64, ttsToAudioBase64Fast } = require("./lib/tts");
 const { transcribeWavBuffer, transcribeStoryCreationWavBuffer } = require("./lib/asr");
 
 const PORT = cfg.PORT;
@@ -33,6 +33,61 @@ function sendJson(res, status, obj) {
     "Access-Control-Allow-Headers": "Content-Type",
   });
   res.end(body);
+}
+
+function beginNdjson(res) {
+  res.writeHead(200, {
+    "Content-Type": "application/x-ndjson; charset=utf-8",
+    "Transfer-Encoding": "chunked",
+    "Cache-Control": "no-cache",
+    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+  });
+}
+
+function writeNdjson(res, obj) {
+  res.write(`${JSON.stringify(obj)}\n`);
+}
+
+function buildTutorVoiceContext(fields) {
+  return buildSystemPrompt(
+    {
+      tutorialTitle: fields.tutorialTitle,
+      stepIndex: fields.stepIndex,
+      stepCount: fields.stepCount,
+      stepHint: fields.stepHint,
+      tutorialTutorOverview: fields.tutorialTutorOverview,
+      stepGoal: fields.stepGoal,
+      stepPartsUsed: fields.stepPartsUsed,
+      stepKeyActions: fields.stepKeyActions,
+      stepPitfalls: fields.stepPitfalls,
+    },
+    { compact: true },
+  );
+}
+
+async function runTutorVoicePipeline(fields, audioBuffer) {
+  const t0 = Date.now();
+  const transcript = await transcribeFromWavBuffer(audioBuffer);
+  const tAsr = Date.now();
+  if (!transcript) throw new Error("empty transcription");
+
+  const systemPrompt = buildTutorVoiceContext(fields);
+  const reply = await runTutorChat(systemPrompt, transcript);
+  const tChat = Date.now();
+  const { audioBase64, audioFormat } = await ttsToWavBase64(reply);
+  const tTts = Date.now();
+  const timing = {
+    asr: tAsr - t0,
+    chat: tChat - tAsr,
+    tts: tTts - tChat,
+    total: tTts - t0,
+  };
+  console.log(
+    `[tutor/voice] asr=${timing.asr}ms chat=${timing.chat}ms tts=${timing.tts}ms total=${timing.total}ms`,
+  );
+  return { transcript, reply, audioBase64, audioFormat: audioFormat || "wav", timing };
 }
 
 function readJsonBody(req, maxBytes = 512 * 1024) {
@@ -132,12 +187,13 @@ async function dashCompatFetch(path, body) {
 }
 
 const OVERVIEW_MAX_CHARS = 12000;
+const TUTOR_OVERVIEW_MAX_CHARS = 2500;
 
-function sliceOverview(raw) {
+function sliceOverview(raw, maxChars = OVERVIEW_MAX_CHARS) {
   const t = String(raw || "").trim();
   if (!t) return "";
-  if (t.length <= OVERVIEW_MAX_CHARS) return t;
-  return `${t.slice(0, OVERVIEW_MAX_CHARS)}\n…(总览已截断)`;
+  if (t.length <= maxChars) return t;
+  return `${t.slice(0, maxChars)}\n…(总览已截断)`;
 }
 
 function formatStructuredStep(body) {
@@ -155,19 +211,34 @@ function formatStructuredStep(body) {
   return `${s}\n`;
 }
 
-function buildSystemPrompt(body) {
+function formatStructuredStepCompact(body) {
+  const goal = String(body.stepGoal || "").trim();
+  const actions = String(body.stepKeyActions || "").trim();
+  if (!goal && !actions) return "";
+  return `本步要点：${goal}${actions ? `；${actions}` : ""}\n`;
+}
+
+function buildSystemPrompt(body, { compact = false } = {}) {
   const title = body.tutorialTitle || "积木拼装教程";
   const stepIndex = Number(body.stepIndex) || 0;
   const stepCount = Number(body.stepCount) || 1;
-  const overview = sliceOverview(body.tutorialTutorOverview);
-  const overviewBlock = overview ? `【教程总览（配套文档）】\n${overview}\n\n` : "";
-  const structuredBlock = formatStructuredStep(body);
+  const overview = sliceOverview(
+    body.tutorialTutorOverview,
+    compact ? TUTOR_OVERVIEW_MAX_CHARS : OVERVIEW_MAX_CHARS,
+  );
+  const overviewBlock = overview ? `【教程总览】\n${overview}\n\n` : "";
+  const structuredBlock = compact ? formatStructuredStepCompact(body) : formatStructuredStep(body);
   const hint = (body.stepHint || "").trim();
-  const hintBlock = hint ? `本步简短提示（可与上文并用；以步骤图为准，勿编造细节）：\n${hint}\n` : "";
+  const hintBlock = hint ? `本步提示：${hint}\n` : "";
+  if (compact) {
+    return `你是教程语音助手「乐乐」，用 2～3 句口语直接回答。
+- 只讲「${title}」第 ${stepIndex + 1}/${stepCount} 步；不编造零件/孔位；不要重复唤醒词。
+${overviewBlock}${structuredBlock}${hintBlock}`;
+  }
   return `你是儿童积木拼装教程里的语音助手「乐乐」，自称「乐乐」，句子短（每次回答控制在 2～5 句中文口语）。
 规则：
 - 只围绕当前教程「${title}」与拼装步骤回答问题；拒绝无关话题与危险操作。
-- 孩子需先说「你好乐乐」唤醒你；未被唤醒时不要主动长篇大论。
+- 孩子已经通过语音唤醒你；直接回答问题，不要在回复里重复「你好乐乐」等唤醒词。
 - 若上文包含「教程总览」或「本步结构化说明」，必须在其范围内讲解；不要编造未出现的零件编号或步骤图上未体现的具体孔位。
 - 具体卡扣位置、孔位若说明与步骤图均未写明，不要编造；请引导孩子对照屏幕上的步骤图、必要时用「上一页/下一页」回看。
 ${overviewBlock}${structuredBlock}${hintBlock}
@@ -175,7 +246,49 @@ ${overviewBlock}${structuredBlock}${hintBlock}
 语气：耐心、鼓励，不要说教；可建议「轻轻对齐」「试着转一下角度」「先找颜色/形状相同的那一块」。`;
 }
 
+async function runTutorChat(systemPrompt, userText) {
+  if (deepseek.hasDeepSeek()) {
+    return deepseek.deepseekChat(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userText },
+      ],
+      { temperature: 0.45, max_tokens: 160 },
+    );
+  }
+
+  if (!DASH_KEY) throw new Error("请配置 DEEPSEEK_API_KEY 或 DASHSCOPE_API_KEY");
+
+  const payload = {
+    model: DASH_CHAT_MODEL,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userText },
+    ],
+    temperature: 0.45,
+    max_tokens: 200,
+  };
+  const { ok, status, text } = await dashCompatFetch("/chat/completions", payload);
+  if (!ok) throw new Error(`dashscope chat HTTP ${status}: ${text.slice(0, 800)}`);
+  const data = JSON.parse(text);
+  const reply = data?.choices?.[0]?.message?.content?.trim() || "";
+  if (!reply) throw new Error("chat empty reply");
+  return reply;
+}
+
 async function runChat(systemPrompt, userText) {
+  if (deepseek.hasDeepSeek()) {
+    return deepseek.deepseekChat(
+      [
+        { role: "system", content: systemPrompt },
+        { role: "user", content: userText },
+      ],
+      { temperature: 0.6, max_tokens: 320 },
+    );
+  }
+
+  if (!DASH_KEY) throw new Error("请配置 DEEPSEEK_API_KEY 或 DASHSCOPE_API_KEY");
+
   const payload = {
     model: DASH_CHAT_MODEL,
     messages: [
@@ -199,8 +312,7 @@ async function transcribeFromWavBuffer(buffer) {
 }
 
 async function ttsToWavBase64(inputText) {
-  const { audioBase64 } = await ttsToAudioBase64(inputText);
-  return audioBase64;
+  return ttsToAudioBase64Fast(inputText);
 }
 
 async function buildStoryCreationQuestions(body) {
@@ -270,7 +382,13 @@ async function extractPageStory(body) {
 
   const log = String(body.conversationLog || "").trim();
   const scene = String(body.sceneGuideText || "").trim();
-  const voiceSupplement = log.length > 0 ? log.replace(/\r/g, "").slice(0, 400) : scene;
+  const placement = String(body.arucoPlacement || "").trim();
+  let voiceSupplement = log.length > 0 ? log.replace(/\r/g, "").slice(0, 400) : scene;
+  if (placement) {
+    voiceSupplement = voiceSupplement
+      ? `${voiceSupplement}；${placement}`
+      : placement;
+  }
   const recapLine = voiceSupplement
     ? `我听说是：${voiceSupplement.slice(0, 120)}。`
     : `这一页是${body.pageTitle || "故事"}，${scene || "摆好了我们就去画！"}`;
@@ -338,6 +456,8 @@ const server = http.createServer(async (req, res) => {
       ok: true,
       hasDeepSeekKey: cfg.hasDeepSeek(),
       hasDashScopeKey: cfg.hasDashScope(),
+      tutorReady: cfg.hasDeepSeek() || cfg.hasDashScope(),
+      storyCreationReady: cfg.storyCreationReady(),
       ttsProvider: cfg.TTS_PROVIDER,
       asrProvider: cfg.ASR_PROVIDER,
       deepseekModel: cfg.DEEPSEEK_MODEL,
@@ -346,8 +466,8 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  if (!DASH_KEY && (path === "/api/tutor/text" || path === "/api/tutor/voice")) {
-    const err = dashKeyMissingResponse();
+  if (!cfg.hasDeepSeek() && !cfg.hasDashScope()) {
+    const err = storyKeyMissingResponse();
     sendJson(res, err.status, err.body);
     return;
   }
@@ -366,9 +486,60 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { error: "userMessage required", reply: "" });
         return;
       }
-      const systemPrompt = buildSystemPrompt(body || {});
-      const reply = await runChat(systemPrompt, um);
-      sendJson(res, 200, { reply, error: "" });
+      const systemPrompt = buildSystemPrompt(body || {}, { compact: true });
+      const reply = await runTutorChat(systemPrompt, um);
+      let audioBase64 = "";
+      let audioFormat = "wav";
+      if (body.includeTts !== false) {
+        const tts = await ttsToAudioBase64Fast(reply);
+        audioBase64 = tts.audioBase64 || "";
+        audioFormat = tts.audioFormat || "wav";
+      }
+      sendJson(res, 200, { reply, audioBase64, audioFormat, error: "" });
+      return;
+    }
+
+    if (req.method === "POST" && path === "/api/tutor/voice-stream") {
+      const ct = (req.headers["content-type"] || "").toLowerCase();
+      if (!ct.includes("multipart/form-data")) {
+        sendJson(res, 400, { error: "Content-Type must be multipart/form-data" });
+        return;
+      }
+
+      const { fields, audioBuffer } = await parseVoiceMultipart(req);
+      if (!audioBuffer || audioBuffer.length === 0) {
+        sendJson(res, 400, { error: "missing audio file field" });
+        return;
+      }
+
+      beginNdjson(res);
+      try {
+        const t0 = Date.now();
+        const transcript = await transcribeFromWavBuffer(audioBuffer);
+        if (!transcript) {
+          writeNdjson(res, { stage: "error", error: "empty transcription" });
+          res.end();
+          return;
+        }
+        writeNdjson(res, { stage: "transcript", transcript, ms: Date.now() - t0 });
+
+        const reply = await runTutorChat(buildTutorVoiceContext(fields), transcript);
+        writeNdjson(res, { stage: "reply", reply, ms: Date.now() - t0 });
+
+        const { audioBase64, audioFormat } = await ttsToWavBase64(reply);
+        writeNdjson(res, {
+          stage: "audio",
+          audioBase64,
+          audioFormat: audioFormat || "wav",
+          ms: Date.now() - t0,
+        });
+        writeNdjson(res, { stage: "done", ms: Date.now() - t0 });
+        console.log(`[tutor/voice-stream] total=${Date.now() - t0}ms`);
+        res.end();
+      } catch (e) {
+        writeNdjson(res, { stage: "error", error: String(e.message || e) });
+        res.end();
+      }
       return;
     }
 
@@ -395,31 +566,14 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const transcript = await transcribeFromWavBuffer(audioBuffer);
-      if (!transcript) {
-        sendJson(res, 400, {
-          transcript: "",
-          reply: "",
-          audioBase64: "",
-          error: "empty transcription",
-        });
-        return;
-      }
-
-      const systemPrompt = buildSystemPrompt({
-        tutorialTitle: fields.tutorialTitle,
-        stepIndex: fields.stepIndex,
-        stepCount: fields.stepCount,
-        stepHint: fields.stepHint,
-        tutorialTutorOverview: fields.tutorialTutorOverview,
-        stepGoal: fields.stepGoal,
-        stepPartsUsed: fields.stepPartsUsed,
-        stepKeyActions: fields.stepKeyActions,
-        stepPitfalls: fields.stepPitfalls,
+      const { transcript, reply, audioBase64, audioFormat } = await runTutorVoicePipeline(fields, audioBuffer);
+      sendJson(res, 200, {
+        transcript,
+        reply,
+        audioBase64,
+        audioFormat,
+        error: "",
       });
-      const reply = await runChat(systemPrompt, transcript);
-      const audioBase64 = await ttsToWavBase64(reply);
-      sendJson(res, 200, { transcript, reply, audioBase64, error: "" });
       return;
     }
 
@@ -430,7 +584,7 @@ const server = http.createServer(async (req, res) => {
         sendJson(res, 400, { audioBase64: "", audioFormat: "wav", error: "text required" });
         return;
       }
-      const { audioBase64, audioFormat } = await ttsToAudioBase64(text);
+      const { audioBase64, audioFormat } = await ttsToAudioBase64Fast(text);
       sendJson(res, 200, { audioBase64, audioFormat: audioFormat || "wav", error: "" });
       return;
     }
@@ -538,7 +692,7 @@ const server = http.createServer(async (req, res) => {
     sendJson(res, 404, { error: "not found" });
   } catch (e) {
     console.error(e);
-    if (path === "/api/tutor/voice") {
+    if (path === "/api/tutor/voice" || path === "/api/tutor/voice-stream") {
       sendJson(res, 500, {
         transcript: "",
         reply: "",

@@ -3,6 +3,7 @@ using UnityEngine;
 
 /// <summary>
 /// 识别完成后分析语音提问缺口：各角色行为 + 可选的固定「还想加什么」文案。
+/// 多角色相对站位由 <see cref="BuildAutoPlacementDescription"/> 根据 ArUco 像素坐标自动推算，不再口头提问。
 /// </summary>
 public static class StoryCreationGapAnalyzer
 {
@@ -56,20 +57,6 @@ public static class StoryCreationGapAnalyzer
             });
         }
 
-        if (askCharacterIds.Count >= 2)
-        {
-            gaps.Add(new Gap
-            {
-                kind = GapKind.CharacterPosition,
-                roleName = BuildPositionRoleLabel(askCharacterIds, characterCatalog),
-                fallbackQuestion = BuildCharacterPositionFallback(
-                    askCharacterIds,
-                    markers,
-                    characterCatalog,
-                    page),
-            });
-        }
-
         if (!string.IsNullOrWhiteSpace(page?.optionalElementQuestion))
         {
             gaps.Add(new Gap
@@ -80,6 +67,33 @@ public static class StoryCreationGapAnalyzer
         }
 
         return gaps;
+    }
+
+    /// <summary>根据当前帧 ArUco 中心像素坐标，推算多角色在镜头里的相对站位描述。</summary>
+    public static string BuildAutoPlacementDescription(
+        StoryDefinition.StoryPageDefinition page,
+        IReadOnlyList<ArUcoDetector.MarkerData> markers,
+        StoryDefinition.CharacterReferenceEntry[] characterCatalog,
+        StoryMarkerTaxonomy taxonomy)
+    {
+        if (markers == null || markers.Count == 0)
+            return "";
+
+        var detectedSet = new HashSet<int>();
+        var detectedCharacters = new List<int>();
+        foreach (var m in markers)
+        {
+            detectedSet.Add(m.id);
+            if (taxonomy.IsCharacter(m.id))
+                detectedCharacters.Add(m.id);
+        }
+
+        detectedCharacters.Sort();
+        var characterIds = ResolveCharactersToAsk(page, detectedCharacters, detectedSet);
+        if (characterIds.Count < 2)
+            return "";
+
+        return DescribeRelativePlacement(characterIds, markers, characterCatalog);
     }
 
     static List<int> ResolveCharactersToAsk(
@@ -123,51 +137,6 @@ public static class StoryCreationGapAnalyzer
         if (!string.IsNullOrEmpty(scene))
             return $"小朋友，{roleName}在这页故事里想做什么呢？{scene} 快来告诉{LeleVoiceAssistant.DisplayName}吧！";
         return $"小朋友，{roleName}现在想做什么呢？快来告诉{LeleVoiceAssistant.DisplayName}吧！";
-    }
-
-    static string BuildPositionRoleLabel(
-        List<int> characterIds,
-        StoryDefinition.CharacterReferenceEntry[] catalog)
-    {
-        if (characterIds == null || characterIds.Count == 0)
-            return "伙伴们";
-        if (characterIds.Count == 1)
-            return ResolveRoleName(characterIds[0], catalog);
-        return $"{ResolveRoleName(characterIds[0], catalog)}和{ResolveRoleName(characterIds[1], catalog)}";
-    }
-
-    static string BuildCharacterPositionFallback(
-        List<int> characterIds,
-        IReadOnlyList<ArUcoDetector.MarkerData> markers,
-        StoryDefinition.CharacterReferenceEntry[] catalog,
-        StoryDefinition.StoryPageDefinition page)
-    {
-        string a = ResolveRoleName(characterIds[0], catalog);
-        string b = characterIds.Count > 1 ? ResolveRoleName(characterIds[1], catalog) : "";
-        string relation = DescribeRelativePlacement(characterIds, markers, catalog);
-        string scene = page?.sceneGuideText?.Trim() ?? "";
-        if (!string.IsNullOrEmpty(relation))
-        {
-            return
-                $"小朋友，{relation}。想不想调整一下？谁在前面、谁离{ExtractSceneAnchor(scene)}更近？告诉{LeleVoiceAssistant.DisplayName}吧！";
-        }
-
-        if (!string.IsNullOrEmpty(b))
-            return $"小朋友，{a}和{b}在镜头里怎么站比较好？谁在前面？告诉{LeleVoiceAssistant.DisplayName}吧！";
-        return $"小朋友，{a}在画面里想站在哪里？告诉{LeleVoiceAssistant.DisplayName}吧！";
-    }
-
-    static string ExtractSceneAnchor(string scene)
-    {
-        if (string.IsNullOrWhiteSpace(scene))
-            return "场景中心";
-        if (scene.Contains("大树"))
-            return "大树";
-        if (scene.Contains("终点"))
-            return "终点";
-        if (scene.Contains("起跑"))
-            return "起跑线";
-        return "场景中心";
     }
 
     static string DescribeRelativePlacement(

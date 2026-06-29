@@ -16,6 +16,11 @@ public class StoryProloguePictureBook : MonoBehaviour
     public string fallbackLibrarySceneName = StoryFlowScenes.StoryLibrary;
     public string backSceneName = StoryFlowScenes.StoryLibrary;
     public bool showBackButton = true;
+    [Tooltip("勾选后运行时按代码重算按钮/图片位置；关闭则保留场景里可视化编辑的布局")]
+    public bool applyRuntimeLayout = false;
+    [Tooltip("留空则自动在 Canvas 下查找 BackButton")]
+    public Button backButton;
+    public string backButtonLabel = "← 返回封面";
     public Image pageImage;
     public TextMeshProUGUI pageCaptionTextTmp;
     public TextMeshProUGUI pageIndicatorTextTmp;
@@ -28,21 +33,74 @@ public class StoryProloguePictureBook : MonoBehaviour
 
     void Awake()
     {
-        ApplyResponsiveLayout();
+        WireFromSceneHierarchy();
+        EnsureCanvasScaler();
+        if (applyRuntimeLayout)
+            ApplyResponsiveLayout();
+        WireBackButton();
+        BringControlsToFront();
+    }
+
+    public void WireFromSceneHierarchy()
+    {
+        var canvas = GetComponentInParent<Canvas>() ?? FindObjectOfType<Canvas>();
+        if (canvas == null)
+            return;
+
+        var root = canvas.transform;
+
+        WireButton(root, "BackButton", ref backButton);
+
+        if (pageImage == null)
+        {
+            var pageGo = root.Find("PageImage") ?? root.Find("Image");
+            if (pageGo != null)
+                pageImage = pageGo.GetComponent<Image>();
+        }
+
+        WireButton(root, "PrevPageButton", ref prevPageButton);
+        WireButton(root, "last", ref prevPageButton);
+        WireButton(root, "prev", ref prevPageButton);
+
+        WireButton(root, "NextPageButton", ref nextPageButton);
+        WireButton(root, "next", ref nextPageButton);
+
+        WireButton(root, "StartBuildButton", ref startBuildButton);
+        WireButton(root, "start", ref startBuildButton);
+
+        if (pageIndicatorTextTmp == null)
+        {
+            var indicator = root.Find("PageIndicator");
+            if (indicator != null)
+                pageIndicatorTextTmp = indicator.GetComponent<TextMeshProUGUI>();
+        }
+    }
+
+    void EnsureCanvasScaler()
+    {
+        var canvas = GetComponentInParent<Canvas>() ?? FindObjectOfType<Canvas>();
+        if (canvas == null)
+            return;
+
+        var scaler = canvas.GetComponent<CanvasScaler>() ??
+                     canvas.gameObject.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+    }
+
+    static void WireButton(Transform root, string name, ref Button target)
+    {
+        if (target != null || root == null)
+            return;
+
+        var t = root.Find(name);
+        if (t != null)
+            target = t.GetComponent<Button>();
     }
 
     void ApplyResponsiveLayout()
     {
-        var canvas = GetComponentInParent<Canvas>() ?? FindObjectOfType<Canvas>();
-        if (canvas != null)
-        {
-            var scaler = canvas.GetComponent<CanvasScaler>() ??
-                         canvas.gameObject.AddComponent<CanvasScaler>();
-            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
-            scaler.matchWidthOrHeight = 0.5f;
-        }
-
         if (pageImage != null)
         {
             StretchFull(pageImage.rectTransform);
@@ -79,18 +137,38 @@ public class StoryProloguePictureBook : MonoBehaviour
         }
 
         BringControlsToFront();
-        TryCreateBackButton();
+        WireBackButton();
     }
 
-    void TryCreateBackButton()
+    void WireBackButton()
     {
-        if (!showBackButton || string.IsNullOrWhiteSpace(backSceneName))
+        if (!showBackButton)
+        {
+            if (backButton != null)
+                backButton.gameObject.SetActive(false);
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(backSceneName))
             return;
 
         var canvas = GetComponentInParent<Canvas>() ?? FindObjectOfType<Canvas>();
-        var btn = StoryFlowBackButtonUi.EnsureTopLeft(canvas, "← 返回故事库", backSceneName);
-        if (btn != null)
-            btn.transform.SetAsLastSibling();
+        if (canvas == null)
+            return;
+
+        if (backButton == null)
+        {
+            var existing = canvas.transform.Find("BackButton");
+            if (existing != null)
+                backButton = existing.GetComponent<Button>();
+        }
+
+        if (backButton == null)
+            backButton = StoryLibraryUiBuilder.CreateBackButton(canvas.transform);
+
+        var label = string.IsNullOrWhiteSpace(backButtonLabel) ? "← 返回" : backButtonLabel.Trim();
+        StoryFlowBackButtonUi.BindNavigation(backButton, label, backSceneName);
+        backButton.gameObject.SetActive(true);
     }
 
     static void StretchFull(RectTransform rt)
@@ -129,6 +207,8 @@ public class StoryProloguePictureBook : MonoBehaviour
 
     void BringControlsToFront()
     {
+        if (backButton != null)
+            backButton.transform.SetAsLastSibling();
         if (pageIndicatorTextTmp != null)
             pageIndicatorTextTmp.transform.SetAsLastSibling();
         if (startBuildButton != null)

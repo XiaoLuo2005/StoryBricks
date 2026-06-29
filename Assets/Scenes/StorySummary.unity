@@ -546,6 +546,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 8f4e2a1b3c5d6e7f8091a2b3c4d5e6f7, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+  portfolioKind: 0
+  pageView: {fileID: 1622409568}
+  pageViewPrefab: {fileID: 0}
+  allowRuntimeFallbackUi: 0
+  applyRuntimeLayout: 0
   headerTitleTextTmp: {fileID: 0}
   cardListContent: {fileID: 380432711}
   cardPrefab: {fileID: 2189903588304142949, guid: 81c66ec3003659c409c4a31f632cd80d, type: 3}
@@ -837,6 +842,7 @@ GameObject:
   - component: {fileID: 1622409567}
   - component: {fileID: 1622409566}
   - component: {fileID: 1622409565}
+  - component: {fileID: 1622409568}
   m_Layer: 0
   m_Name: Canvas
   m_TagString: Untagged
@@ -927,6 +933,26 @@ Canvas:
   m_SortingLayerID: 0
   m_SortingOrder: 0
   m_TargetDisplay: 0
+--- !u!114 &1622409568
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1622409563}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f2e3b68310faf2d4b9b5b61d71fea55c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  canvas: {fileID: 1622409567}
+  decorRoot: {fileID: 0}
+  headerTitle: {fileID: 0}
+  headerTitleImage: {fileID: 0}
+  scrollRect: {fileID: 481461335}
+  cardListContent: {fileID: 380432711}
+  emptyHint: {fileID: 0}
+  backButton: {fileID: 0}
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

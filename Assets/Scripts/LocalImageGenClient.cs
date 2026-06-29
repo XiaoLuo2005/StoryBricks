@@ -28,6 +28,15 @@ public class LocalImageGenClient : MonoBehaviour
     [Header("生图云端")]
     public string serverUrl = "http://39.97.174.49:8800/generate";
 
+    [Header("360 全景")]
+    [Tooltip("留空则从 serverUrl 推导为 …/generate-panorama")]
+    public string panoramaServerUrl = "";
+
+    [Tooltip("图生全景时上传源图的最长边（过大易 413）")]
+    public int maxPanoramaSourceUploadEdge = 768;
+
+    public string panoramaSize = "1536*768";
+
     [Header("Generation")]
     public string model = "wan2.6-image";
     public string size = DefaultSize;
@@ -242,6 +251,120 @@ public class LocalImageGenClient : MonoBehaviour
         }
 
         yield return DownloadTextureToOutcome(response.image_url, outcome);
+    }
+
+    /// <summary>把已生成的绘本页扩展为 360° equirectangular 全景（图生图）。</summary>
+    public IEnumerator GeneratePanoramaAndWait(string promptToSend, Texture2D sourcePageTexture, GenerateOutcome outcome)
+    {
+        if (outcome == null)
+            yield break;
+
+        outcome.success = false;
+        outcome.texture = null;
+        outcome.imageUrl = null;
+        outcome.errorMessage = null;
+
+        if (sourcePageTexture == null)
+        {
+            outcome.errorMessage = "sourcePageTexture is required for panorama img2img.";
+            yield break;
+        }
+
+        var tempTextures = new List<Texture2D>();
+        string sourceDataUrl;
+        try
+        {
+            Texture2D readable = EnsureReadable(sourcePageTexture, tempTextures);
+            Texture2D upload = StoryImageUtil.DownscaleIfNeeded(
+                readable,
+                maxPanoramaSourceUploadEdge > 0 ? maxPanoramaSourceUploadEdge : 768,
+                tempTextures);
+            byte[] png = upload.EncodeToPNG();
+            if (png == null || png.Length == 0)
+                throw new InvalidOperationException("EncodeToPNG failed for panorama source");
+            sourceDataUrl = "data:image/png;base64," + Convert.ToBase64String(png);
+        }
+        catch (Exception ex)
+        {
+            CleanupTempTextures(tempTextures);
+            outcome.errorMessage = ex.Message;
+            yield break;
+        }
+
+        string json = BuildPanoramaRequestJson(promptToSend, sourceDataUrl);
+        Debug.Log($"[Client] 全景图生图请求体约 {json.Length / 1024} KB");
+
+        var req = new UnityWebRequest(ResolvePanoramaServerUrl(), UnityWebRequest.kHttpVerbPOST);
+        activeWebRequest = req;
+        req.uploadHandler = new UploadHandlerRaw(Encoding.UTF8.GetBytes(json));
+        req.downloadHandler = new DownloadHandlerBuffer();
+        req.SetRequestHeader("Content-Type", "application/json");
+
+        yield return req.SendWebRequest();
+
+        bool genOk = req.result == UnityWebRequest.Result.Success;
+        string genBody = req.downloadHandler != null ? req.downloadHandler.text : "";
+        string genErr = req.error;
+
+        if (activeWebRequest == req)
+        {
+            activeWebRequest = null;
+            ReleaseWebRequest(ref req);
+        }
+
+        CleanupTempTextures(tempTextures);
+
+        if (!genOk)
+        {
+            outcome.errorMessage = (genErr ?? "request failed") + "\n" + genBody;
+            yield break;
+        }
+
+        var response = JsonUtility.FromJson<GenerateResponse>(genBody);
+        if (response == null || string.IsNullOrEmpty(response.image_url))
+        {
+            outcome.errorMessage = "Invalid panorama response: " + genBody;
+            yield break;
+        }
+
+        if (!isActiveAndEnabled)
+        {
+            outcome.errorMessage = "LocalImageGenClient disabled during panorama generation.";
+            yield break;
+        }
+
+        yield return DownloadTextureToOutcome(response.image_url, outcome);
+        if (outcome.success)
+            Debug.Log($"[Client] 全景图生成功 mode={response.mode} url={outcome.imageUrl}");
+    }
+
+    public string ResolvePanoramaServerUrl()
+    {
+        if (!string.IsNullOrWhiteSpace(panoramaServerUrl))
+            return panoramaServerUrl.Trim();
+
+        string baseUrl = (serverUrl ?? "").Trim();
+        if (string.IsNullOrEmpty(baseUrl))
+            return "http://127.0.0.1:8800/generate-panorama";
+
+        const string generateSuffix = "/generate";
+        if (baseUrl.EndsWith(generateSuffix, StringComparison.OrdinalIgnoreCase))
+            return baseUrl.Substring(0, baseUrl.Length - generateSuffix.Length) + "/generate-panorama";
+
+        return baseUrl.TrimEnd('/') + "/generate-panorama";
+    }
+
+    private string BuildPanoramaRequestJson(string promptToSend, string sourceImageDataUrl)
+    {
+        var sb = new StringBuilder(256);
+        sb.Append('{');
+        sb.Append("\"prompt\":").Append(JsonQuote(promptToSend ?? "")).Append(',');
+        sb.Append("\"source_image\":").Append(JsonQuote(sourceImageDataUrl)).Append(',');
+        sb.Append("\"model\":").Append(JsonQuote(model)).Append(',');
+        sb.Append("\"size\":").Append(JsonQuote(string.IsNullOrWhiteSpace(panoramaSize) ? "1536*768" : panoramaSize.Trim())).Append(',');
+        sb.Append("\"n\":1");
+        sb.Append('}');
+        return sb.ToString();
     }
 
     private IEnumerator GenerateImageCoroutine(string promptToSend, Texture2D[] referenceTextures)

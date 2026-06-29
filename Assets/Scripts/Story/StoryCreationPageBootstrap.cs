@@ -22,6 +22,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         Building,
         Capturing,
         VoiceInteracting,
+        StoryConfirm,
         Generating,
         PageDone,
         StoryFinished,
@@ -37,6 +38,9 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     [Tooltip("本机调试填 http://127.0.0.1:8800/generate；云服务器需 nginx 放宽 body 限制")]
     public string imageGenServerUrl = "http://127.0.0.1:8800/generate";
 
+    [Tooltip("绘本页成图后，是否用该页图生图扩展为 360° 全景")]
+    public bool generatePanoramaAfterPage = true;
+
     [Header("语音交互")]
     [Tooltip("storybricks-tutor-gateway 地址，用于 TTS 提问与 ASR 收录")]
     public string tutorGatewayUrl = "http://127.0.0.1:8787";
@@ -50,7 +54,16 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     [Tooltip("生图前是否用大模型整理各来源文本为连贯场景描述；失败则回退本地拼接")]
     public bool useAiPromptRefinement = true;
 
-    [Tooltip("允许在语音问答时切换为文字输入（宿舍测试用）")]
+    [Tooltip("点「这页摆好了」后，若边玩边说内容不足，是否由乐乐主动提问补缺口")]
+    public bool useGapQuestionsOnConfirm = true;
+
+    [Tooltip("是否用大模型生成行为类提问；元素问仍用 optionalElementQuestion")]
+    public bool useAiGeneratedQuestions = true;
+
+    [Tooltip("边玩边说超过该字数且各角色都已提到时，跳过主动提问")]
+    public int minStoryDraftCharsToSkipQuestions = 18;
+
+    [Tooltip("已废弃：AnswerInputRoot 不再显示")]
     public bool allowTextAnswerInput = false;
 
     [Tooltip("精简 UI：隐藏重复文案/状态条，按阶段只显示必要按钮")]
@@ -122,6 +135,11 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     GameObject _answerTextPanel;
     GameObject _pageCaptionPanel;
     TextMeshProUGUI _pageCaptionText;
+    Button _storyToggleButton;
+    Button _storyCloseButton;
+    bool _storyPanelVisible;
+    const string StoryToggleShowLabel = "故事阅读";
+    const string StoryToggleHideLabel = "收起故事";
     AnswerInputMode _answerInputMode = AnswerInputMode.Voice;
     ArUcoDetector _arUcoDetector;
     LocalImageGenClient _imageGenClient;
@@ -140,6 +158,11 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     string _lastPageCaption = "";
     string _lastConversationLog = "";
     string _lastVoiceSupplement = "";
+    string _autoPlacementDescription = "";
+    bool? _storyConfirmChoice;
+    string _confirmButtonDefaultLabel = "这页摆好了";
+    string _rebuildButtonDefaultLabel = "重搭";
+    Coroutine _confirmGenerateRoutine;
     Coroutine _autoGuideCoroutine;
 
     /// <summary>创作页摄像头与 ArUco 检测器，供后续识别/生图流程读取。</summary>
@@ -210,22 +233,41 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         if (pageView != null && pageView.IsComplete)
             return;
 
+        if (pageView != null)
+            pageView.WireFromSceneHierarchy();
+
+        if (pageView != null && pageView.IsComplete)
+            return;
+
+        if (pageView == null)
+        {
+            pageView = FindObjectOfType<StoryCreationPageView>();
+            if (pageView != null)
+                pageView.WireFromSceneHierarchy();
+        }
+
+        if (pageView != null && pageView.IsComplete)
+            return;
+
+        if (!allowRuntimeFallbackUi)
+            return;
+
         if (pageViewPrefab == null)
             pageViewPrefab = Resources.Load<StoryCreationPageView>("UI/StoryCreationPage");
 
-        if (pageViewPrefab != null)
+        if (pageViewPrefab != null && pageView == null)
         {
             pageView = Instantiate(pageViewPrefab);
             pageView.name = pageViewPrefab.name;
             return;
         }
 
-        if (!allowRuntimeFallbackUi)
+        if (pageView != null)
             return;
 
         Debug.LogWarning(
-            "[StoryCreationPageBootstrap] 未配置 pageView / Prefab，正在运行时临时搭建 UI。" +
-            "请运行 StoryBricks/创作页/创建 StoryCreation UI Prefab。");
+            "[StoryCreationPageBootstrap] 未配置 pageView，正在运行时临时搭建 UI。" +
+            "请运行 StoryBricks/创作页/当前场景挂载可视化 UI。");
         pageView = StoryCreationPageUiBuilder.BuildPageView(null);
     }
 
@@ -267,9 +309,33 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
         _pageCaptionPanel = pageView.pageCaptionPanel;
         _pageCaptionText = pageView.pageCaptionText;
+        _storyToggleButton = pageView.storyToggleButton;
+        _storyCloseButton = pageView.storyCloseButton;
+        if (_storyCloseButton == null && _pageCaptionPanel != null)
+        {
+            var close = _pageCaptionPanel.transform.Find("StoryCloseButton");
+            if (close != null)
+                _storyCloseButton = close.GetComponent<Button>();
+        }
         var captionFont = ResolveCaptionFont(pageView.pageCaptionFont ?? pageCaptionFont);
         if (_pageCaptionText != null)
-            StoryPageCaptionArt.ApplyCaptionStyle(_pageCaptionText, captionFont, pageCaptionMaxChars);
+            StoryPageCaptionArt.ApplyScrollableStoryTextStyle(
+                _pageCaptionText,
+                captionFont,
+                30f,
+                TextAlignmentOptions.TopLeft);
+        ApplyPageCaptionPanelLayout();
+        if (_storyToggleButton != null)
+        {
+            _storyToggleButton.onClick.RemoveAllListeners();
+            _storyToggleButton.onClick.AddListener(ToggleStoryPanel);
+        }
+
+        if (_storyCloseButton != null)
+        {
+            _storyCloseButton.onClick.RemoveAllListeners();
+            _storyCloseButton.onClick.AddListener(CollapseStoryPanel);
+        }
 
         if (pageView.backButton != null)
             StoryFlowBackButtonUi.BindNavigation(pageView.backButton, "← 返回作品集", backSceneName);
@@ -294,6 +360,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
         WireCameraPreviewUi();
         WireAnswerInputUi();
+        CacheActionButtonLabels();
     }
 
     void WireCameraPreviewUi()
@@ -319,37 +386,15 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     void WireAnswerInputUi()
     {
+        HideAnswerInputUi();
+    }
+
+    void HideAnswerInputUi()
+    {
         if (_answerUiRoot != null)
             _answerUiRoot.SetActive(false);
-
-        if (!allowTextAnswerInput)
-            return;
-
-        if (answerModeVoiceButton != null)
-        {
-            answerModeVoiceButton.onClick.RemoveAllListeners();
-            answerModeVoiceButton.onClick.AddListener(() => SetAnswerInputMode(AnswerInputMode.Voice));
-        }
-
-        if (answerModeTextButton != null)
-        {
-            answerModeTextButton.onClick.RemoveAllListeners();
-            answerModeTextButton.onClick.AddListener(() => SetAnswerInputMode(AnswerInputMode.Text));
-        }
-
-        if (answerTextInput != null)
-        {
-            answerTextInput.onEndEdit.RemoveAllListeners();
-            answerTextInput.onEndEdit.AddListener(OnAnswerTextEndEdit);
-        }
-
-        if (answerTextSubmitButton != null)
-        {
-            answerTextSubmitButton.onClick.RemoveAllListeners();
-            answerTextSubmitButton.onClick.AddListener(OnAnswerTextSubmit);
-        }
-
-        SetAnswerInputMode(defaultAnswerInputMode);
+        if (answerVoiceButton != null)
+            answerVoiceButton.gameObject.SetActive(false);
     }
 
     void SetupCameraDetector()
@@ -535,21 +580,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     void UpdateAnswerInputUi()
     {
-        bool voicePhase = _phase == CreationPhase.VoiceInteracting;
-        bool showAnswerUi = voicePhase && allowTextAnswerInput;
-
-        if (_answerUiRoot != null)
-            _answerUiRoot.SetActive(showAnswerUi);
-
-        var voiceBtn = ActiveAnswerVoiceButton;
-        if (voiceBtn != null)
-        {
-            bool showHold = voicePhase && (!allowTextAnswerInput || _answerInputMode == AnswerInputMode.Voice);
-            voiceBtn.gameObject.SetActive(showHold);
-        }
-
-        if (showAnswerUi)
-            SetAnswerInputMode(_answerInputMode);
+        HideAnswerInputUi();
     }
 
     Button ActiveAnswerVoiceButton => answerVoiceButton;
@@ -597,6 +628,8 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         _lastPageCaption = "";
         _lastVoiceSupplement = "";
         _lastConversationLog = "";
+        _autoPlacementDescription = "";
+        _storyConfirmChoice = null;
 
         if (_backgroundImage != null)
         {
@@ -663,7 +696,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         yield return new WaitForSeconds(0.35f);
         if (_phase != CreationPhase.Building)
             yield break;
-        yield return PlayGuideVoiceCoroutine(text, appendToLele: true);
+        yield return PlayGuideVoiceCoroutine(text, appendToLele: false);
     }
 
     void ClearGeneratedPageOverlay()
@@ -686,24 +719,131 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     void ClearPageCaption()
     {
         _lastPageCaption = "";
+        _storyPanelVisible = false;
         if (_pageCaptionText != null)
             _pageCaptionText.text = "";
-        if (_pageCaptionPanel != null)
-            _pageCaptionPanel.SetActive(false);
+        RefreshStoryPanelUi();
+    }
+
+    string GetStoryDisplayText()
+    {
+        if (!string.IsNullOrWhiteSpace(_lastPageCaption))
+            return _lastPageCaption.Trim();
+        return _lastPageSummary?.Trim() ?? "";
+    }
+
+    void UpdateStoryPanelText(string text)
+    {
+        if (_pageCaptionText == null)
+            return;
+        _pageCaptionText.text = StoryPageCaptionArt.Clamp(text, pageCaptionMaxChars);
+        CompletedStoryRuntimeUi.ResetStoryTextScroll(_pageCaptionText);
     }
 
     void ShowPageCaption(string caption)
     {
         caption = StoryPageCaptionArt.Clamp(caption, pageCaptionMaxChars);
         _lastPageCaption = caption;
-        if (_pageCaptionText == null)
+        UpdateStoryPanelText(caption);
+        _storyPanelVisible = false;
+        RefreshStoryPanelUi();
+    }
+
+    void ShowStoryDraft(string draft)
+    {
+        UpdateStoryPanelText(draft);
+        _storyPanelVisible = false;
+        RefreshStoryPanelUi();
+    }
+
+    void ToggleStoryPanel()
+    {
+        if (string.IsNullOrWhiteSpace(GetStoryDisplayText()))
             return;
 
-        _pageCaptionText.text = caption;
+        _storyPanelVisible = !_storyPanelVisible;
+        RefreshStoryPanelUi();
+    }
+
+    void CollapseStoryPanel()
+    {
+        if (!_storyPanelVisible)
+            return;
+
+        _storyPanelVisible = false;
+        RefreshStoryPanelUi();
+    }
+
+    void RefreshStoryPanelUi()
+    {
+        bool hasText = !string.IsNullOrWhiteSpace(GetStoryDisplayText());
+        bool showToggle = hasText && (
+            _phase == CreationPhase.StoryConfirm ||
+            _phase == CreationPhase.Generating ||
+            _phase == CreationPhase.PageDone);
+
+        if (_storyToggleButton != null)
+        {
+            _storyToggleButton.gameObject.SetActive(showToggle);
+            _storyToggleButton.interactable = hasText;
+            CompletedStoryRuntimeUi.SetStoryToggleLabel(
+                _storyToggleButton,
+                _storyPanelVisible ? StoryToggleHideLabel : StoryToggleShowLabel);
+        }
+
         if (_pageCaptionPanel != null)
-            _pageCaptionPanel.SetActive(!string.IsNullOrWhiteSpace(caption));
-        if (_guideText != null && !string.IsNullOrWhiteSpace(caption))
+        {
+            bool showPanel = showToggle && _storyPanelVisible;
+            _pageCaptionPanel.SetActive(showPanel);
+        }
+
+        if (_guideText != null && hasText && _storyPanelVisible)
             _guideText.gameObject.SetActive(false);
+
+        BringStoryToggleToFront();
+    }
+
+    void BringStoryToggleToFront()
+    {
+        if (_pageCaptionPanel != null && _pageCaptionPanel.activeSelf)
+            _pageCaptionPanel.transform.SetAsLastSibling();
+        if (_storyToggleButton != null)
+            _storyToggleButton.transform.SetAsLastSibling();
+    }
+
+    void BringPageCaptionToFront()
+    {
+        BringStoryToggleToFront();
+    }
+
+    void ApplyPageCaptionPanelLayout()
+    {
+        if (_pageCaptionPanel == null)
+            return;
+
+        var panelRt = _pageCaptionPanel.GetComponent<RectTransform>();
+        if (panelRt == null)
+            return;
+
+        panelRt.anchorMin = new Vector2(0f, 0f);
+        panelRt.anchorMax = new Vector2(0f, 0f);
+        panelRt.pivot = new Vector2(0f, 0f);
+        panelRt.sizeDelta = new Vector2(580f, 168f);
+        panelRt.anchoredPosition = new Vector2(
+            StoryCreationPageUiBuilder.EdgePadding,
+            StoryCreationPageUiBuilder.BottomInset + StoryCreationPageUiBuilder.PrimaryButtonSize.y + 20f);
+    }
+
+    void SetCameraPreviewVisible(bool visible)
+    {
+        if (_cameraPreviewMini == null)
+            return;
+
+        var miniRoot = _cameraPreviewMini.transform.parent != null
+            ? _cameraPreviewMini.transform.parent.parent
+            : null;
+        if (miniRoot != null)
+            miniRoot.gameObject.SetActive(visible);
     }
 
     TMP_FontAsset ResolveCaptionFont(TMP_FontAsset assigned)
@@ -774,7 +914,8 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         {
             bool arActive = phase == CreationPhase.Building ||
                             phase == CreationPhase.Capturing ||
-                            phase == CreationPhase.VoiceInteracting;
+                            phase == CreationPhase.VoiceInteracting ||
+                            phase == CreationPhase.StoryConfirm;
             _arDirector.SetActive(arActive);
         }
 
@@ -790,14 +931,17 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     void UpdateActionButtons()
     {
+        UpdateLelePanelVisibility();
+
         bool busy = _phase == CreationPhase.Capturing ||
                     _phase == CreationPhase.Generating;
         bool voicePhase = _phase == CreationPhase.VoiceInteracting;
+        bool storyConfirm = _phase == CreationPhase.StoryConfirm;
         bool pageDone = _phase == CreationPhase.PageDone;
         bool lastPage = _pages != null && _pageIndex >= _pages.Length - 1;
 
         if (_voiceGuideButton != null)
-            _voiceGuideButton.interactable = !busy && !pageDone && !voicePhase;
+            _voiceGuideButton.interactable = !busy && !pageDone && !voicePhase && !storyConfirm;
         if (_confirmButton != null)
         {
             _confirmButton.interactable = !busy && !pageDone && !voicePhase;
@@ -819,8 +963,8 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         }
 
         var answerBtn = ActiveAnswerVoiceButton;
-        if (answerBtn != null && (!allowTextAnswerInput || _answerInputMode == AnswerInputMode.Voice))
-            answerBtn.gameObject.SetActive(voicePhase);
+        if (answerBtn != null)
+            answerBtn.gameObject.SetActive(false);
 
         UpdateAnswerInputUi();
         ApplySimplifiedChrome();
@@ -834,6 +978,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         bool busy = _phase == CreationPhase.Capturing || _phase == CreationPhase.Generating;
         bool building = _phase == CreationPhase.Building;
         bool voicePhase = _phase == CreationPhase.VoiceInteracting;
+        bool storyConfirm = _phase == CreationPhase.StoryConfirm;
         bool pageDone = _phase == CreationPhase.PageDone;
 
         if (_guideText != null)
@@ -843,19 +988,18 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             _voiceGuideButton.gameObject.SetActive(!autoPlayGuideOnPage && building && !busy);
 
         if (_pageIndicatorText != null)
-            _pageIndicatorText.gameObject.SetActive(building || pageDone);
+            _pageIndicatorText.gameObject.SetActive(building || storyConfirm || pageDone);
 
         if (_statusPanel != null)
             _statusPanel.SetActive(false);
 
-        if (_answerUiRoot != null && !allowTextAnswerInput)
-            _answerUiRoot.SetActive(false);
+        HideAnswerInputUi();
 
         if (_rebuildButton != null)
-            _rebuildButton.gameObject.SetActive(building && !busy && !voicePhase);
+            _rebuildButton.gameObject.SetActive((building || storyConfirm) && !busy && !voicePhase);
 
         if (_confirmButton != null)
-            _confirmButton.gameObject.SetActive(building && !busy && !voicePhase);
+            _confirmButton.gameObject.SetActive((building || storyConfirm) && !busy && !voicePhase);
 
         if (_nextPageButton != null)
             _nextPageButton.gameObject.SetActive(pageDone);
@@ -864,13 +1008,33 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             _regenerateButton.gameObject.SetActive(pageDone);
 
         if (_cameraPreviewMini != null)
+            SetCameraPreviewVisible(building || _phase == CreationPhase.Capturing);
+
+        RefreshStoryPanelUi();
+    }
+
+    void UpdateLelePanelVisibility()
+    {
+        if (_leleHost?.Panel == null)
+            return;
+
+        if (_generatedPageImage != null && _generatedPageImage.gameObject.activeSelf)
         {
-            bool showCam = building || voicePhase || _phase == CreationPhase.Capturing;
-            _cameraPreviewMini.transform.parent.gameObject.SetActive(showCam);
+            _leleHost.Panel.gameObject.SetActive(false);
+            return;
         }
 
+        bool show = _phase == CreationPhase.Building
+                    || _phase == CreationPhase.VoiceInteracting
+                    || _phase == CreationPhase.StoryConfirm;
+        _leleHost.Panel.gameObject.SetActive(show);
+    }
+
+    void HideLelePanelForGeneration()
+    {
         if (_leleHost?.Panel != null)
-            _leleHost.Panel.gameObject.SetActive(building || voicePhase || pageDone);
+            _leleHost.Panel.gameObject.SetActive(false);
+        _leleHost?.SetFreeChatEnabled(false);
     }
 
     void SetStatus(string text)
@@ -905,7 +1069,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             return;
         }
 
-        StartCoroutine(PlayGuideVoiceCoroutine(page.voiceGuideText, appendToLele: true));
+        StartCoroutine(PlayGuideVoiceCoroutine(page.voiceGuideText, appendToLele: false));
     }
 
     IEnumerator PlayGuideVoiceCoroutine(string text, bool appendToLele = false)
@@ -940,9 +1104,31 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     void OnConfirmClicked()
     {
-        if (_phase == CreationPhase.Capturing || _phase == CreationPhase.Generating)
+        if (_phase == CreationPhase.StoryConfirm)
+        {
+            _storyConfirmChoice = true;
+            _voiceGateway?.StopPlayback();
+            HideLelePanelForGeneration();
+            SetStatus("好的，开始画绘本…");
             return;
-        StartCoroutine(ConfirmAndGenerateCoroutine());
+        }
+
+        if (_phase == CreationPhase.Capturing ||
+            _phase == CreationPhase.Generating ||
+            _phase == CreationPhase.VoiceInteracting ||
+            _phase == CreationPhase.StoryConfirm)
+            return;
+
+        if (_confirmGenerateRoutine != null)
+            return;
+
+        _confirmGenerateRoutine = StartCoroutine(ConfirmAndGenerateRoutine());
+    }
+
+    IEnumerator ConfirmAndGenerateRoutine()
+    {
+        yield return ConfirmAndGenerateCoroutine();
+        _confirmGenerateRoutine = null;
     }
 
     IEnumerator ConfirmAndGenerateCoroutine()
@@ -964,29 +1150,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             yield break;
         }
 
-        var markers = _arUcoDetector?.DetectedMarkers;
-        var gaps = StoryCreationGapAnalyzer.Analyze(
-            page,
-            markers,
-            _characterReferences,
-            _markerTaxonomy);
-
-        string voiceSupplement = "";
-        if (gaps.Count > 0 || _leleHost != null)
-        {
-            SetPhase(CreationPhase.VoiceInteracting);
-            yield return RunAmbientStoryCloseCoroutine(page, gaps, result => voiceSupplement = result ?? "");
-            if (string.IsNullOrWhiteSpace(voiceSupplement))
-            {
-                SetPhase(CreationPhase.Building);
-                SetStatus("还没定好故事，边玩边跟乐乐说说，再点「这页摆好了」。");
-                yield break;
-            }
-        }
-
-        if (string.IsNullOrWhiteSpace(_lastPageSummary))
-            _lastPageSummary = voiceSupplement.Trim();
-
+        // 「这页摆好了」时抓拍并锁定积木布局，后续对话不再重复抓拍
         SetPhase(CreationPhase.Capturing);
         for (int i = (int)CaptureCountdownSeconds; i > 0; i--)
         {
@@ -1006,7 +1170,275 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             yield break;
         }
 
+        var markers = _arUcoDetector?.DetectedMarkers;
+        _autoPlacementDescription = StoryCreationGapAnalyzer.BuildAutoPlacementDescription(
+            page,
+            markers,
+            _characterReferences,
+            _markerTaxonomy);
+
+        var gaps = StoryCreationGapAnalyzer.Analyze(
+            page,
+            markers,
+            _characterReferences,
+            _markerTaxonomy);
+
+        string voiceSupplement = "";
+        if (gaps.Count > 0 || _leleHost != null)
+        {
+            SetPhase(CreationPhase.VoiceInteracting);
+            if (useGapQuestionsOnConfirm && gaps.Count > 0)
+                yield return RunTargetedGapQuestionsIfNeeded(page, gaps);
+            yield return RunAmbientStoryCloseCoroutine(page, gaps, result => voiceSupplement = result ?? "");
+            voiceSupplement = MergeVoiceSupplementWithPlacement(voiceSupplement, _autoPlacementDescription);
+            voiceSupplement = StoryPageGenerationPipeline.EnrichVoiceSupplementWithRequiredRoles(
+                voiceSupplement,
+                validation.detectedIds,
+                _characterReferences);
+            if (string.IsNullOrWhiteSpace(voiceSupplement))
+            {
+                SetPhase(CreationPhase.Building);
+                SetStatus("还没定好故事，边玩边跟乐乐说说，再点「这页摆好了」。");
+                yield break;
+            }
+        }
+
+        if (string.IsNullOrWhiteSpace(_lastPageSummary))
+            _lastPageSummary = voiceSupplement.Trim();
+
+        voiceSupplement = StoryPageGenerationPipeline.EnrichVoiceSupplementWithRequiredRoles(
+            voiceSupplement,
+            validation.detectedIds,
+            _characterReferences);
+
         yield return GeneratePageImageCoroutine(page, validation, voiceSupplement, isRegenerate: false);
+    }
+
+    IEnumerator RunTargetedGapQuestionsIfNeeded(
+        StoryDefinition.StoryPageDefinition page,
+        List<StoryCreationGapAnalyzer.Gap> gaps)
+    {
+        if (_voiceGateway == null || gaps == null || gaps.Count == 0)
+            yield break;
+
+        string draft = _leleHost?.GetStoryDraft() ?? "";
+        if (ShouldSkipGapQuestions(gaps, draft))
+            yield break;
+
+        var toAsk = SelectGapsToAsk(gaps);
+        if (toAsk.Count == 0)
+            yield break;
+
+        var questions = new List<string>();
+        yield return FetchQuestionsCoroutine(page, toAsk, questions);
+        if (questions.Count == 0)
+            yield break;
+
+        string intro = questions.Count <= 2
+            ? "摆好啦！乐乐还想问小朋友一两句，随便说说就行～"
+            : "摆好啦！乐乐还想问小朋友几个小问题，随便说说就行～";
+        _leleHost?.AppendLele(intro);
+        ShowVoiceQuestionText(intro);
+        SetStatus("乐乐想再问你一两句");
+        yield return _voiceGateway.SpeakText(intro);
+
+        for (int i = 0; i < questions.Count; i++)
+        {
+            string question = questions[i];
+            var gap = toAsk[i];
+            _currentVoiceQuestion = question;
+            _currentGapKind = gap.kind.ToString();
+            _currentGapRoleName = gap.roleName ?? "";
+
+            if (answerTextInput != null)
+                answerTextInput.text = "";
+
+            _leleHost?.AppendLele(question);
+            ShowVoiceQuestionText(question);
+            SetStatus(BuildAnswerStatusHint(i, questions.Count));
+            BeginVoiceAnswerWindow();
+
+            bool spoke = false;
+            string ttsError = "";
+            yield return _voiceGateway.SpeakText(question, (success, err) =>
+            {
+                spoke = success;
+                ttsError = err;
+            });
+            if (!spoke && !string.IsNullOrEmpty(ttsError))
+                SetStatus($"（语音播放失败：{ttsError}，请看屏幕文字）{i + 1}/{questions.Count}");
+
+            StartContinuousAnswerListeningIfVoiceMode();
+            yield return WaitForChildVoiceAnswer();
+            StopContinuousAnswerListening();
+
+            if (!string.IsNullOrWhiteSpace(_pendingVoiceError))
+            {
+                SetStatus(_pendingVoiceError);
+                yield return new WaitForSeconds(0.5f);
+                i--;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(_pendingVoiceTranscript))
+            {
+                SetStatus("没听清也没关系，我们先用刚才听到的");
+                continue;
+            }
+
+            string answer = _pendingVoiceTranscript.Trim();
+            _leleHost?.AppendChild(answer);
+            _leleHost?.AppendStoryDraft(answer);
+        }
+
+        ClearVoiceQuestionText();
+    }
+
+    bool ShouldSkipGapQuestions(
+        List<StoryCreationGapAnalyzer.Gap> gaps,
+        string draft)
+    {
+        draft = draft?.Trim() ?? "";
+        if (draft.Length == 0)
+            return false;
+
+        int behaviorCount = 0;
+        int mentionedCount = 0;
+        if (gaps != null)
+        {
+            foreach (var gap in gaps)
+            {
+                if (gap.kind != StoryCreationGapAnalyzer.GapKind.CharacterBehavior)
+                    continue;
+                behaviorCount++;
+                var role = gap.roleName?.Trim();
+                if (!string.IsNullOrEmpty(role) && draft.Contains(role))
+                    mentionedCount++;
+            }
+        }
+
+        if (behaviorCount == 0)
+            return draft.Length >= Mathf.Max(8, minStoryDraftCharsToSkipQuestions);
+
+        int threshold = Mathf.Max(8, minStoryDraftCharsToSkipQuestions);
+        return draft.Length >= threshold && mentionedCount >= behaviorCount;
+    }
+
+    static List<StoryCreationGapAnalyzer.Gap> SelectGapsToAsk(
+        List<StoryCreationGapAnalyzer.Gap> gaps)
+    {
+        var result = new List<StoryCreationGapAnalyzer.Gap>();
+        if (gaps == null || gaps.Count == 0)
+            return result;
+
+        foreach (var gap in gaps)
+        {
+            if (gap.kind == StoryCreationGapAnalyzer.GapKind.CharacterBehavior)
+                result.Add(gap);
+        }
+
+        foreach (var gap in gaps)
+        {
+            if (gap.kind != StoryCreationGapAnalyzer.GapKind.OptionalStoryElement)
+                continue;
+            result.Add(gap);
+            break;
+        }
+
+        return result;
+    }
+
+    static string MergeVoiceSupplementWithPlacement(string supplement, string placement)
+    {
+        supplement = supplement?.Trim() ?? "";
+        placement = placement?.Trim() ?? "";
+        if (string.IsNullOrEmpty(placement))
+            return supplement;
+        if (!string.IsNullOrEmpty(supplement) && supplement.Contains(placement))
+            return supplement;
+        if (string.IsNullOrEmpty(supplement))
+            return placement;
+        return $"{supplement}；{placement}";
+    }
+
+    IEnumerator FetchQuestionsCoroutine(
+        StoryDefinition.StoryPageDefinition page,
+        List<StoryCreationGapAnalyzer.Gap> gaps,
+        List<string> outQuestions)
+    {
+        outQuestions.Clear();
+        if (gaps == null || gaps.Count == 0)
+            yield break;
+
+        var questions = new string[gaps.Count];
+        var aiGaps = new List<StoryCreationGapAnalyzer.Gap>();
+        var aiGapIndices = new List<int>();
+
+        for (int i = 0; i < gaps.Count; i++)
+        {
+            var gap = gaps[i];
+            if (gap.kind == StoryCreationGapAnalyzer.GapKind.OptionalStoryElement)
+            {
+                questions[i] = gap.fallbackQuestion;
+                continue;
+            }
+
+            aiGapIndices.Add(i);
+            aiGaps.Add(gap);
+        }
+
+        if (aiGaps.Count > 0 && useAiGeneratedQuestions && _voiceGateway != null)
+        {
+            var req = new StoryCreationVoiceGateway.StoryCreationQuestionsRequest
+            {
+                storyTitle = StorySessionCache.StoryTitle,
+                pageTitle = page?.pageTitle ?? "",
+                sceneGuideText = page?.sceneGuideText ?? "",
+                previousSummary = StorySessionCache.BuildPreviousPagesSummary(),
+                gaps = BuildGapDtos(aiGaps),
+            };
+
+            List<StoryCreationVoiceGateway.StoryCreationQuestion> remote = null;
+            string err = "";
+            yield return _voiceGateway.FetchQuestions(req, (qs, e) =>
+            {
+                remote = qs;
+                err = e;
+            });
+
+            if (remote != null && remote.Count >= aiGaps.Count)
+            {
+                for (int j = 0; j < aiGaps.Count; j++)
+                    questions[aiGapIndices[j]] = remote[j].text.Trim();
+            }
+            else
+            {
+                if (useAiGeneratedQuestions && !string.IsNullOrEmpty(err))
+                    Debug.LogWarning($"[StoryCreation] AI 提问生成失败，使用本地话术：{err}");
+                for (int j = 0; j < aiGaps.Count; j++)
+                    questions[aiGapIndices[j]] = aiGaps[j].fallbackQuestion;
+            }
+        }
+        else if (aiGaps.Count > 0)
+        {
+            for (int j = 0; j < aiGaps.Count; j++)
+                questions[aiGapIndices[j]] = aiGaps[j].fallbackQuestion;
+        }
+
+        for (int i = 0; i < questions.Length; i++)
+        {
+            string q = questions[i];
+            if (string.IsNullOrWhiteSpace(q))
+                q = gaps[i].fallbackQuestion;
+            outQuestions.Add(q.Trim());
+        }
+    }
+
+    string BuildAnswerStatusHint(int index, int total)
+    {
+        if (allowTextAnswerInput && _answerInputMode == AnswerInputMode.Text)
+            return $"提问 {index + 1}/{total} · 文字模式：输入后点「提交」";
+        return $"提问 {index + 1}/{total} · 跟乐乐随便说说就行";
     }
 
     IEnumerator RunAmbientStoryCloseCoroutine(
@@ -1127,6 +1559,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             sceneGuideText = page?.sceneGuideText ?? "",
             previousSummary = StorySessionCache.BuildPreviousPagesSummary(),
             rosterHint = _leleHost?.RosterHint ?? "",
+            arucoPlacement = _autoPlacementDescription ?? "",
             conversationLog = conversationLog ?? "",
             detectedRoles = BuildDetectedRolesLabel(gaps),
             gaps = BuildGapDtos(gaps ?? new List<StoryCreationGapAnalyzer.Gap>()),
@@ -1210,75 +1643,49 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         }
 
         _lastPageSummary = summary;
+        ShowStoryDraft(summary);
         string confirmPrompt = !string.IsNullOrWhiteSpace(recapLineOverride)
-            ? $"{recapLineOverride.Trim()} 小朋友，这样对吗？说「对」我就去画，说「想改」我们再来一遍。"
-            : $"好，{LeleVoiceAssistant.DisplayName}总结一下：{summary}。小朋友，这样对吗？说「对」我就去画，说「想改」我们再来一遍。";
+            ? $"{recapLineOverride.Trim()} 小朋友，核对一下，对了就点「去画这本页」。"
+            : $"好，{LeleVoiceAssistant.DisplayName}总结一下：{summary}。小朋友，核对一下，对了就点「去画这本页」。";
 
-        for (int confirmTurn = 0; confirmTurn < 3; confirmTurn++)
+        _leleHost?.AppendLele(confirmPrompt);
+        ShowVoiceQuestionText(confirmPrompt);
+        SetStoryConfirmButtonLabels();
+        SetPhase(CreationPhase.StoryConfirm);
+        SetStatus("积木已拍好，核对故事后点「去画这本页」");
+        _storyConfirmChoice = null;
+
+        if (_voiceGateway != null)
+            StartCoroutine(SpeakConfirmPromptCoroutine(confirmPrompt));
+
+        while (!_storyConfirmChoice.HasValue)
+            yield return null;
+
+        _voiceGateway?.StopPlayback();
+        ClearVoiceQuestionText();
+        RestoreActionButtonLabels();
+
+        if (_storyConfirmChoice == false)
         {
-            _leleHost?.AppendLele(confirmPrompt);
-            ShowVoiceQuestionText(confirmPrompt);
-            SetPhase(CreationPhase.VoiceInteracting);
-            BeginVoiceAnswerWindow();
-            yield return _voiceGateway.SpeakText(confirmPrompt);
-            StartContinuousAnswerListeningIfVoiceMode();
-            yield return WaitForChildVoiceAnswer();
-            StopContinuousAnswerListening();
-            ClearVoiceQuestionText();
-
-            string response = _pendingVoiceTranscript?.Trim() ?? "";
-            if (string.IsNullOrWhiteSpace(response))
-            {
-                SetStatus("没听清，再说「对」或「想改」");
-                continue;
-            }
-
-            _leleHost?.AppendChild(response);
-            var intent = ClassifyGapIntent(response);
-            if (intent == "repeat_question" || intent == "clarify")
-            {
-                confirmPrompt =
-                    $"好，{LeleVoiceAssistant.DisplayName}再说一遍：{summary}。觉得对了就说「对」，想改就说「想改」。";
-                yield return _voiceGateway.SpeakText("好，乐乐再说一遍刚才的故事！");
-                continue;
-            }
-
-            if (intent == "off_topic")
-            {
-                confirmPrompt = "我们先确认故事哦：觉得对了就说「对」，想改就说「想改」。";
-                yield return _voiceGateway.SpeakText("哈哈，我们先把这个故事确认完好不好？");
-                continue;
-            }
-
-            if (WantsEditAnswer(response))
-            {
-                _leleHost?.AppendLele("好的，我们再来编一遍！");
-                onConfirmed?.Invoke("");
-                yield break;
-            }
-
-            onConfirmed?.Invoke(summary);
+            _leleHost?.AppendLele("好的，我们再来编一遍！");
+            onConfirmed?.Invoke("");
             yield break;
         }
 
-        onConfirmed?.Invoke(summary);
+        string accepted = string.IsNullOrWhiteSpace(summary) ? draftSupplement : summary;
+        onConfirmed?.Invoke(accepted?.Trim() ?? "");
+    }
+
+    IEnumerator SpeakConfirmPromptCoroutine(string text)
+    {
+        if (_voiceGateway == null || string.IsNullOrWhiteSpace(text))
+            yield break;
+        yield return _voiceGateway.SpeakText(text);
     }
 
     void StoreConversationLog(string conversationLog)
     {
         _lastConversationLog = conversationLog ?? "";
-    }
-
-    static bool WantsEditAnswer(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-            return false;
-        return text.Contains("改") ||
-               text.Contains("不对") ||
-               text.Contains("重来") ||
-               text.Contains("不要") ||
-               text.Contains("再讲") ||
-               text.Contains("再说");
     }
 
     IEnumerator PlayWaitNarrationCoroutine(string pageSummary)
@@ -1406,51 +1813,10 @@ public class StoryCreationPageBootstrap : MonoBehaviour
             previousSummary = bundle.previousSummary ?? "",
             voiceSupplement = bundle.voiceSupplement ?? "",
             detectedRolesDescription = bundle.detectedRolesDescription ?? "",
+            mandatoryRolesClause = bundle.mandatoryRolesClause ?? "",
             referenceImageClause = bundle.referenceImageClause ?? "",
             isContinuationPage = bundle.isContinuationPage,
         };
-    }
-
-    static string ClassifyGapIntent(string answer)
-    {
-        var t = LeleVoiceAssistant.Normalize(answer);
-        if (string.IsNullOrEmpty(t))
-            return "incomplete";
-
-        string[] repeat =
-        {
-            "什么", "啥", "再说一遍", "再说一次", "没听清", "没听见", "听不清", "重复一遍", "再说一下",
-        };
-        foreach (var token in repeat)
-        {
-            if (t.Contains(token))
-                return "repeat_question";
-        }
-
-        string[] clarify =
-        {
-            "什么意思", "听不懂", "不明白", "啥意思", "不懂", "听不明白",
-        };
-        foreach (var token in clarify)
-        {
-            if (t.Contains(token))
-                return "clarify";
-        }
-
-        string[] offTopic =
-        {
-            "吃饭", "饿了", "回家", "妈妈", "爸爸", "玩游戏", "手机", "电视", "幼儿园", "睡觉",
-        };
-        foreach (var token in offTopic)
-        {
-            if (t.Contains(token) && t.Length <= 8)
-                return "off_topic";
-        }
-
-        if (t.Length <= 1 || t == "不知道" || t == "随便" || t == "嗯" || t == "好")
-            return "incomplete";
-
-        return "answered";
     }
 
     void BeginVoiceAnswerWindow()
@@ -1521,7 +1887,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
     IEnumerator TranscribeVoiceAnswerCoroutine(byte[] wav)
     {
         _voiceGateway?.PauseAnswerListening();
-        SetStatus($"{LeleVoiceAssistant.DisplayName}在听…");
+        SetStatus(LeleVoiceAssistant.TranscribingHint);
         var asrContext = new StoryCreationVoiceGateway.AsrContext
         {
             gapKind = _currentGapKind ?? "",
@@ -1609,6 +1975,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
         SetPhase(CreationPhase.Generating);
         SetStatus("正在写这一页的绘本故事…");
+        ShowStoryDraft(_lastPageSummary);
         yield return GeneratePageCaptionCoroutine(page, _lastPageSummary, _lastConversationLog);
         SetStatus("正在整理生图描述…");
 
@@ -1665,6 +2032,28 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         if (!isRegenerate && _pageIndex == 0 && outcome.texture != null)
             StorySessionCache.SetAnchorPageTexture(outcome.texture);
 
+        Texture2D panoramaTexture = null;
+        string panoramaImageUrl = "";
+        if (generatePanoramaAfterPage && outcome.texture != null)
+        {
+            SetStatus("正在把本页扩展成 360° 全景…");
+            string panoPrompt = !string.IsNullOrWhiteSpace(_lastPageCaption)
+                ? _lastPageCaption
+                : (!string.IsNullOrWhiteSpace(prompt) ? prompt : page?.sceneGuideText ?? "");
+            var panoOutcome = new LocalImageGenClient.GenerateOutcome();
+            yield return _imageGenClient.GeneratePanoramaAndWait(panoPrompt, outcome.texture, panoOutcome);
+            if (panoOutcome.success && panoOutcome.texture != null)
+            {
+                panoramaTexture = panoOutcome.texture;
+                panoramaImageUrl = panoOutcome.imageUrl ?? "";
+                Debug.Log("[StoryCreation] 本页 360 全景图生图成功");
+            }
+            else if (!string.IsNullOrEmpty(panoOutcome.errorMessage))
+            {
+                Debug.LogWarning($"[StoryCreation] 360 全景图生图失败（仍保留平面页）：{panoOutcome.errorMessage}");
+            }
+        }
+
         _lastVoiceSupplement = voiceSupplement ?? "";
         StorySessionCache.RecordCompletedPage(new StorySessionCache.PageRecord
         {
@@ -1681,13 +2070,21 @@ public class StoryCreationPageBootstrap : MonoBehaviour
                 ? "重新生成"
                 : $"img2img，参考角色 {references.characterCount} 个" +
                   (references.hasAnchor ? " + P1 锚图" : "") +
-                  (string.IsNullOrWhiteSpace(voiceSupplement) ? "" : " + 语音补充"),
+                  (string.IsNullOrWhiteSpace(voiceSupplement) ? "" : " + 语音补充") +
+                  (panoramaTexture != null ? " + 360全景" : ""),
             generatedImageUrl = outcome.imageUrl ?? "",
-        }, outcome.texture, _pageIndex);
+            panoramaImageUrl = panoramaImageUrl,
+        }, outcome.texture, _pageIndex, panoramaTexture);
 
         SetPhase(CreationPhase.PageDone);
         SetStatus(isRegenerate ? "新绘本好啦！" : "本页创作完成，可进入下一页。");
-        yield return PlayPageRecapCoroutine(_lastPageSummary);
+        if (!string.IsNullOrWhiteSpace(_lastPageCaption))
+            ShowPageCaption(_lastPageCaption);
+        UpdateActionButtons();
+        string recapForChild = !string.IsNullOrWhiteSpace(_lastPageCaption)
+            ? _lastPageCaption
+            : _lastPageSummary;
+        yield return PlayPageRecapCoroutine(recapForChild);
         if (!isRegenerate)
             yield return FetchBranchHintCoroutine(page, _lastPageSummary);
         if (!isRegenerate)
@@ -1699,6 +2096,16 @@ public class StoryCreationPageBootstrap : MonoBehaviour
 
     void OnRebuildClicked()
     {
+        if (_phase == CreationPhase.StoryConfirm)
+        {
+            _voiceGateway?.StopPlayback();
+            _storyConfirmChoice = false;
+            return;
+        }
+
+        RestoreActionButtonLabels();
+        _storyConfirmChoice = null;
+        _confirmGenerateRoutine = null;
         StopAllCoroutines();
         _voiceGateway?.CancelRequest();
         _voiceGateway?.StopMicIfAny();
@@ -1741,5 +2148,40 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         return string.IsNullOrWhiteSpace(finishSceneName)
             ? StoryFlowScenes.StoryWorks
             : finishSceneName.Trim();
+    }
+
+    void CacheActionButtonLabels()
+    {
+        _confirmButtonDefaultLabel = GetButtonLabel(_confirmButton) ?? "这页摆好了";
+        _rebuildButtonDefaultLabel = GetButtonLabel(_rebuildButton) ?? "重搭";
+    }
+
+    void SetStoryConfirmButtonLabels()
+    {
+        SetButtonLabel(_confirmButton, "去画这本页");
+        SetButtonLabel(_rebuildButton, "再改改");
+    }
+
+    void RestoreActionButtonLabels()
+    {
+        SetButtonLabel(_confirmButton, _confirmButtonDefaultLabel);
+        SetButtonLabel(_rebuildButton, _rebuildButtonDefaultLabel);
+    }
+
+    static string GetButtonLabel(Button button)
+    {
+        if (button == null)
+            return null;
+        var label = button.GetComponentInChildren<Text>();
+        return label != null ? label.text : null;
+    }
+
+    static void SetButtonLabel(Button button, string text)
+    {
+        if (button == null || string.IsNullOrEmpty(text))
+            return;
+        var label = button.GetComponentInChildren<Text>();
+        if (label != null)
+            label.text = text;
     }
 }

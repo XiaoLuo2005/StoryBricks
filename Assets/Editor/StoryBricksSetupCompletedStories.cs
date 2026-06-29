@@ -17,6 +17,10 @@ public static class StoryBricksSetupCompletedStories
         SetupScene(ViewerScenePath, typeof(CompletedStoryViewerRoot), "CompletedStoryViewerRoot");
         EditorSceneManager.OpenScene(LibraryScenePath, OpenSceneMode.Single);
         StoryBricksSetupCompletedStoryLibraryUi.MountInActiveScene();
+        EditorSceneManager.OpenScene(ViewerScenePath, OpenSceneMode.Single);
+        var viewerRoot = Object.FindObjectOfType<CompletedStoryViewerRoot>();
+        StoryBricksSetupCompletedStoryViewerUi.WireViewerScene(viewerRoot, replaceExistingUi: false);
+        EditorSceneManager.OpenScene(LibraryScenePath, OpenSceneMode.Single);
         StoryBricksBuildSettings.EnsureAllFlowScenesEnabled();
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
@@ -92,8 +96,27 @@ public static class StoryBricksSetupCompletedStories
                 continue;
             if (obj.GetComponent(rootType) != null)
                 continue;
-            if (obj.name == "EventSystem" || obj.name.Contains("Canvas"))
-                Object.DestroyImmediate(obj.gameObject);
+            if (obj.name == "EventSystem")
+                continue;
+            if (obj.name.Contains("Canvas") || obj.name.Contains("CompletedStoryViewerCanvas"))
+            {
+                if (rootType == typeof(CompletedStoryViewerRoot))
+                {
+                    var viewer = Object.FindObjectOfType<CompletedStoryViewerRoot>();
+                    var pageView = obj.GetComponent<CompletedStoryViewerPageView>();
+                    if (pageView != null || (viewer != null && viewer.pageView != null))
+                        continue;
+                }
+
+                if (rootType == typeof(CompletedStoryLibraryRoot))
+                {
+                    var library = Object.FindObjectOfType<CompletedStoryLibraryRoot>();
+                    if (library != null && library.pageView != null && library.pageView.IsComplete)
+                        continue;
+                }
+            }
+
+            Object.DestroyImmediate(obj.gameObject);
         }
 
         if (Object.FindObjectOfType<EventSystem>() == null)

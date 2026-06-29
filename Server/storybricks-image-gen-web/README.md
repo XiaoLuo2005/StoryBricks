@@ -32,6 +32,25 @@
 
 `mode` 为 `image_edit` 或 `text_to_image`。
 
+### 360 全景（equirectangular 2:1）
+
+`POST /generate-panorama`（JSON）
+
+| 字段 | 必填 | 说明 |
+|------|------|------|
+| `prompt` | 文生时必填 | 场景描述；图生时可作补充说明 |
+| `source_image` | 否 | 单张参考图（URL 或 base64），**推荐传已生成的绘本页** |
+| `reference_images` | 否 | 与 `source_image` 二选一，取第一张 |
+| `model` | 否 | 默认 `wan2.6-image` |
+| `size` | 否 | 默认 `1536*768`（2:1） |
+
+**两种模式：**
+
+1. **图生全景（推荐）**：传 `source_image` = 刚生成的平面绘本页 → wan2.6 **图像编辑**，把画面扩展成 360° 环视，角色/画风更易保持一致。
+2. **文生全景**：不传参考图，纯 prompt 生成环境。
+
+响应 `mode` 为 `panorama_360_img2img` 或 `panorama_360`。
+
 ## 部署（生产 / 云服务器）
 
 1. 安装 **Node.js 18+**

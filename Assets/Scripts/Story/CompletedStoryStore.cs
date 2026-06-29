@@ -34,6 +34,8 @@ public static class CompletedStoryStore
         public string pageId = "";
         public string pageTitle = "";
         public string imageFile = "";
+        public string panoramaImageFile = "";
+        public string userRecordingFile = "";
         public string userVoiceAnswer = "";
         public string generatedStoryText = "";
         public bool isPrologue;
@@ -112,11 +114,21 @@ public static class CompletedStoryStore
 
             string fileName = $"page_{i:D2}.png";
             SaveTexturePng(texture, Path.Combine(saveDir, fileName));
+
+            string panoramaFileName = "";
+            var panoramaTexture = StorySessionCache.GetPagePanoramaTexture(i);
+            if (panoramaTexture != null)
+            {
+                panoramaFileName = $"page_{i:D2}_panorama.png";
+                SaveTexturePng(panoramaTexture, Path.Combine(saveDir, panoramaFileName));
+            }
+
             pageFiles.Add(new CompletedStoryPageFile
             {
                 pageId = record.pageId ?? "",
                 pageTitle = record.pageTitle ?? "",
                 imageFile = fileName,
+                panoramaImageFile = panoramaFileName,
                 userVoiceAnswer = record.userVoiceAnswer ?? "",
                 generatedStoryText = record.generatedStoryText ?? "",
                 isPrologue = false,
@@ -224,6 +236,56 @@ public static class CompletedStoryStore
 
         string path = Path.Combine(GetSaveDirectory(saveId), page.imageFile);
         return LoadSpriteFromFile(path);
+    }
+
+    public static string GetPagePanoramaPath(string saveId, CompletedStoryPageFile page)
+    {
+        if (page == null || string.IsNullOrWhiteSpace(page.panoramaImageFile))
+            return null;
+
+        string path = Path.Combine(GetSaveDirectory(saveId), page.panoramaImageFile);
+        return File.Exists(path) ? path : null;
+    }
+
+    public static string GetPageRecordingPath(string saveId, CompletedStoryPageFile page)
+    {
+        if (page == null || string.IsNullOrWhiteSpace(page.userRecordingFile))
+            return null;
+
+        string path = Path.Combine(GetSaveDirectory(saveId), page.userRecordingFile);
+        return File.Exists(path) ? path : null;
+    }
+
+    public static bool SavePageUserRecording(string saveId, int pageIndex, byte[] wavBytes)
+    {
+        if (string.IsNullOrWhiteSpace(saveId) || wavBytes == null || wavBytes.Length == 0)
+            return false;
+
+        var save = LoadSave(saveId);
+        if (save?.pages == null || pageIndex < 0 || pageIndex >= save.pages.Length)
+            return false;
+
+        var page = save.pages[pageIndex];
+        if (page == null || string.IsNullOrWhiteSpace(page.imageFile))
+            return false;
+
+        string fileName = Path.GetFileNameWithoutExtension(page.imageFile) + "_recording.wav";
+        string dir = GetSaveDirectory(saveId);
+        string path = Path.Combine(dir, fileName);
+
+        if (!string.IsNullOrWhiteSpace(page.userRecordingFile))
+        {
+            string oldPath = Path.Combine(dir, page.userRecordingFile);
+            if (!string.Equals(oldPath, path, StringComparison.OrdinalIgnoreCase) && File.Exists(oldPath))
+            {
+                try { File.Delete(oldPath); } catch { /* ignore */ }
+            }
+        }
+
+        File.WriteAllBytes(path, wavBytes);
+        page.userRecordingFile = fileName;
+        File.WriteAllText(Path.Combine(dir, "story.json"), JsonUtility.ToJson(save, true));
+        return true;
     }
 
     public static Sprite LoadCoverSprite(string saveId, CompletedStoryIndexEntry entry)

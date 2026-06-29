@@ -12,12 +12,14 @@ public static class StoryBricksSetupStoryCreation
     public static void Setup()
     {
         SetupScene();
+        StoryBricksSetupStoryCreationPageUi.BatchWireStoryCreationSceneAndSave();
         StoryBricksBuildSettings.EnsureSceneEnabled(ScenePath);
         UpdateTortoiseHareCreationSceneName();
         AssetDatabase.SaveAssets();
         EditorUtility.DisplayDialog("完成",
             "已搭建 StoryCreation：\n" +
             "• 场景：Assets/Scenes/StoryCreation.unity\n" +
+            "• 已挂载 StoryCreationCanvas（可在 Hierarchy 可视化编辑）\n" +
             "• 已加入 Build Settings\n" +
             "• 龟兔赛跑 creationSceneName 已设为 StoryCreation\n\n" +
             "流程：StorySummary → StoryPrologue → StoryWorks → 教程 → StoryWorks → StoryCreation",

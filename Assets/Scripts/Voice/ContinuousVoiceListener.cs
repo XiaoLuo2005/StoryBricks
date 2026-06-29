@@ -12,11 +12,11 @@ public class ContinuousVoiceListener : MonoBehaviour
     const int LoopClipSeconds = 30;
 
     [SerializeField] float speechThreshold = 0.009f;
-    [SerializeField] float speechStartHoldSeconds = 0.12f;
-    [SerializeField] float silenceEndSeconds = 1.2f;
-    [SerializeField] float minUtteranceSeconds = 0.35f;
+    [SerializeField] float speechStartHoldSeconds = 0.08f;
+    [SerializeField] float silenceEndSeconds = 0.28f;
+    [SerializeField] float minUtteranceSeconds = 0.22f;
     [SerializeField] float maxUtteranceSeconds = 14f;
-    [SerializeField] float cooldownSeconds = 0.45f;
+    [SerializeField] float cooldownSeconds = 0.18f;
     [Tooltip("留空则按优先级自动选择；填 Realtek / PicoStreamingMicrophone 等关键字即可匹配")]
     [SerializeField] string preferredMicDeviceName = "Realtek";
 
@@ -51,6 +51,7 @@ public class ContinuousVoiceListener : MonoBehaviour
         Action<string> onError = null,
         Action<bool> onSpeakingChanged = null)
     {
+        ApplyAssistantProfile();
         StopListening();
         if (!EnsureMicPermission())
         {
@@ -80,12 +81,21 @@ public class ContinuousVoiceListener : MonoBehaviour
         Debug.Log($"[ContinuousVoiceListener] 使用麦克风: {_micDevice}");
         _micClip = Microphone.Start(_micDevice, true, LoopClipSeconds, DefaultSampleRate);
         _lastMicPos = 0;
-        _micWarmupFrames = 30;
+        _micWarmupFrames = 8;
         _loggedMicNotReady = false;
         _active = true;
         _paused = false;
         ResetSpeechState();
         return true;
+    }
+
+    /// <summary>助手模式：停说后更快切句，减少 Siri/YOYO 式等待。</summary>
+    public void ApplyAssistantProfile()
+    {
+        speechStartHoldSeconds = 0.08f;
+        silenceEndSeconds = 0.28f;
+        minUtteranceSeconds = 0.22f;
+        cooldownSeconds = 0.18f;
     }
 
     public void StopListening()
@@ -104,17 +114,30 @@ public class ContinuousVoiceListener : MonoBehaviour
         if (!_active)
             return;
         _paused = true;
+        DiscardBufferedMicSamples();
         ResetSpeechState();
         _onSpeakingChanged?.Invoke(false);
     }
 
-    public void Resume()
+    public void Resume(float extraCooldownSeconds = 0f)
     {
         if (!_active)
             return;
         _paused = false;
-        _cooldown = cooldownSeconds;
+        DiscardBufferedMicSamples();
+        _cooldown = cooldownSeconds + Mathf.Max(0f, extraCooldownSeconds);
         ResetSpeechState();
+    }
+
+    /// <summary>暂停期间麦克风仍在写入环形缓冲；恢复前丢弃，避免把扬声器里的声音当作用户说话。</summary>
+    void DiscardBufferedMicSamples()
+    {
+        if (_micClip == null || string.IsNullOrEmpty(_micDevice))
+            return;
+
+        int pos = Microphone.GetPosition(_micDevice);
+        if (pos >= 0)
+            _lastMicPos = pos;
     }
 
     void Update()

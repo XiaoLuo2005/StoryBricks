@@ -116,6 +116,60 @@ public static class StoryPageGenerationPipeline
         return $"伙伴{markerId}";
     }
 
+    public static string BuildMandatoryRolesClause(
+        IReadOnlyList<int> detectedIds,
+        StoryDefinition.CharacterReferenceEntry[] catalog)
+    {
+        if (detectedIds == null || detectedIds.Count == 0)
+            return "";
+
+        var names = new List<string>();
+        var taxonomy = StoryMarkerTaxonomy.Default;
+        foreach (int id in detectedIds)
+        {
+            if (!taxonomy.IsCharacter(id))
+                continue;
+            names.Add(ResolveRoleNameForMarker(id, catalog));
+        }
+
+        if (names.Count == 0)
+            return "";
+
+        if (names.Count == 1)
+            return $"本页画面必须清晰呈现{names[0]}，不得省略或只画背景。";
+
+        return $"本页画面必须同时清晰呈现以下全部角色，缺一不可：{string.Join("、", names)}。";
+    }
+
+    public static string EnrichVoiceSupplementWithRequiredRoles(
+        string supplement,
+        IReadOnlyList<int> detectedIds,
+        StoryDefinition.CharacterReferenceEntry[] catalog)
+    {
+        supplement = supplement?.Trim() ?? "";
+        if (detectedIds == null || detectedIds.Count == 0)
+            return supplement;
+
+        var taxonomy = StoryMarkerTaxonomy.Default;
+        var missing = new List<string>();
+        foreach (int id in detectedIds)
+        {
+            if (!taxonomy.IsCharacter(id))
+                continue;
+            string role = ResolveRoleNameForMarker(id, catalog);
+            if (!string.IsNullOrEmpty(role) && !supplement.Contains(role))
+                missing.Add(role);
+        }
+
+        if (missing.Count == 0)
+            return supplement;
+
+        string note = missing.Count == 1
+            ? $"{missing[0]}也在本页镜头里。"
+            : $"{string.Join("、", missing)}也都在本页镜头里。";
+        return string.IsNullOrEmpty(supplement) ? note : $"{supplement}；{note}";
+    }
+
     /// <summary>
     /// 按 detectedIds 顺序收集角色标准图；P2+ 可追加 P1 锚图（占 1 个 slot）。
     /// </summary>
@@ -192,6 +246,8 @@ public static class StoryPageGenerationPipeline
         /// <summary>如「参考图1的兔子外貌、图2的乌龟外貌，生成儿童绘本插画。」</summary>
         public string referenceImageClause;
         public string detectedRolesDescription;
+        /// <summary>抓拍锁定的角色名单，生图时必须全部出现在画面中。</summary>
+        public string mandatoryRolesClause;
     }
 
     public static PromptInputBundle CollectPromptInputs(
@@ -245,6 +301,7 @@ public static class StoryPageGenerationPipeline
             isContinuationPage = StorySessionCache.CompletedPages.Count > 0,
             referenceImageClause = sbRef.ToString(),
             detectedRolesDescription = roleNames.Count > 0 ? string.Join("、", roleNames) : "",
+            mandatoryRolesClause = BuildMandatoryRolesClause(detectedIds, catalog),
         };
     }
 
@@ -283,12 +340,17 @@ public static class StoryPageGenerationPipeline
         if (!string.IsNullOrWhiteSpace(bundle.voiceSupplement))
             sb.Append("儿童语音补充：").Append(bundle.voiceSupplement.Trim()).Append('。');
 
+        if (!string.IsNullOrWhiteSpace(bundle.mandatoryRolesClause))
+            sb.Append(bundle.mandatoryRolesClause.Trim()).Append('。');
+
         sb.Append(HardConstraintsSuffix);
         return sb.ToString();
     }
 
     const string HardConstraintsSuffix =
-        "角色外貌必须与参考图一致，柔和水彩绘本风格，横版构图，画面中禁止任何文字、字母、数字、对话框、字幕、标题、水印。";
+        "镜头里已识别的全部角色都必须出现在画面中，不得只画其中一个或只画背景；角色外貌必须与参考图一致，柔和水彩绘本风格，横版构图；" +
+        "画面中禁止任何文字、字母、数字、字幕、标题、水印；" +
+        "禁止空白对话框、对白气泡、漫画台词框、speech bubble、caption box 或任何留白文字区域，不得用框遮挡角色或场景元素。";
 
     /// <summary>将 AI 整理后的场景描述与参考图说明、硬性约束合并为最终生图 Prompt。</summary>
     public static string AssembleFinalPrompt(PromptInputBundle bundle, string aiRefinedSceneText)
@@ -303,6 +365,8 @@ public static class StoryPageGenerationPipeline
         string scene = StripDuplicateReferencePreface(aiRefinedSceneText, bundle.referenceImageClause);
         sb.Append(scene);
         AppendSentenceEndIfNeeded(sb, scene);
+        if (!string.IsNullOrWhiteSpace(bundle.mandatoryRolesClause))
+            sb.Append(bundle.mandatoryRolesClause.Trim()).Append('。');
         sb.Append(HardConstraintsSuffix);
         return sb.ToString();
     }

@@ -38,6 +38,8 @@ public class StoryCreationLeleHost : MonoBehaviour
 
         var leleRoot = CreateLeleRoot(canvasRoot);
         _panel = TutorialLelePanelUiBuilder.Build(leleRoot);
+        StretchStoryCreationDialogScroll(_panel);
+        _panel.EnsureDialogLog();
 
         ResetDialog(
             $"你好！我是{LeleVoiceAssistant.DisplayName}。边摆积木边告诉我就行，摆好了点「这页摆好了」。");
@@ -60,9 +62,10 @@ public class StoryCreationLeleHost : MonoBehaviour
     {
         _dialog.Clear();
         ClearStoryDraft();
+        _panel?.EnsureDialogLog();
+        _panel?.DialogLog?.SetOpening(openingLine ?? "");
         if (!string.IsNullOrWhiteSpace(openingLine))
             _dialog.AppendLine(openingLine.Trim());
-        RefreshDialogOutput();
     }
 
     public void AppendLele(string line)
@@ -70,7 +73,7 @@ public class StoryCreationLeleHost : MonoBehaviour
         if (string.IsNullOrWhiteSpace(line))
             return;
         _dialog.AppendLine($"{LeleVoiceAssistant.DisplayName}：{line.Trim()}");
-        RefreshDialogOutput();
+        _panel?.DialogLog?.AppendLele(line.Trim());
     }
 
     public void AppendChild(string line)
@@ -78,7 +81,7 @@ public class StoryCreationLeleHost : MonoBehaviour
         if (string.IsNullOrWhiteSpace(line))
             return;
         _dialog.AppendLine($"你：{line.Trim()}");
-        RefreshDialogOutput();
+        _panel?.DialogLog?.AppendUser(line.Trim());
     }
 
     public string BuildConversationLog() => _dialog.ToString();
@@ -179,7 +182,12 @@ public class StoryCreationLeleHost : MonoBehaviour
 
         _gateway.StopAnswerListening();
         bool ok = _gateway.StartAnswerListening(
-            wav => StartCoroutine(HandleFreeUtterance(wav)),
+            wav =>
+            {
+                if (_voiceBusy && _gateway != null && !_gateway.IsSpeaking)
+                    return;
+                StartCoroutine(HandleFreeUtterance(wav));
+            },
             err => SetStatus(err),
             speaking => UpdateListeningLabel(speaking));
 
@@ -227,17 +235,24 @@ public class StoryCreationLeleHost : MonoBehaviour
 
         if (_voiceBusy)
         {
-            SetStatus("请等乐乐说完，再跟她说");
-            yield break;
+            if (_gateway.IsSpeaking)
+                _gateway.StopPlayback();
+            else
+            {
+                SetStatus("请等乐乐说完，再跟她说");
+                yield break;
+            }
         }
 
         _voiceBusy = true;
         _gateway.PauseAnswerListening();
-        SetStatus($"{LeleVoiceAssistant.DisplayName}在识别你说的话…");
+        SetStatus(LeleVoiceAssistant.TranscribingHint);
+        SetListenLabel(LeleVoiceAssistant.TranscribingHint);
 
         string transcript = "";
         string error = "";
-        yield return _gateway.TranscribeWav(wav, (t, e) =>
+        var asrCtx = new StoryCreationVoiceGateway.AsrContext { fast = true };
+        yield return _gateway.TranscribeWav(wav, asrCtx, (t, e) =>
         {
             transcript = t;
             error = e;
@@ -252,6 +267,9 @@ public class StoryCreationLeleHost : MonoBehaviour
 
         AppendChild(transcript);
         AppendStoryDraft(transcript);
+
+        SetStatus(LeleVoiceAssistant.ThinkingHint);
+        SetListenLabel(LeleVoiceAssistant.ThinkingHint);
 
         var req = new StoryCreationVoiceGateway.StoryCreationFreeChatRequest
         {
@@ -272,7 +290,10 @@ public class StoryCreationLeleHost : MonoBehaviour
         });
 
         if (!string.IsNullOrWhiteSpace(reply))
+        {
+            SetListenLabel(SpeakingStatus);
             yield return SpeakLeleLine(reply, appendToDialog: true);
+        }
 
         FinishFreeUtterance();
     }
@@ -300,21 +321,24 @@ public class StoryCreationLeleHost : MonoBehaviour
         rt.anchorMin = new Vector2(0f, 0f);
         rt.anchorMax = new Vector2(0f, 0f);
         rt.pivot = new Vector2(0f, 0f);
-        rt.sizeDelta = new Vector2(460f, 248f);
+        rt.sizeDelta = new Vector2(460f, 272f);
         rt.anchoredPosition = new Vector2(
             24f,
             StoryCreationPageUiBuilder.BottomInset + StoryCreationPageUiBuilder.PrimaryButtonSize.y + 140f);
         return rt;
     }
 
-    void RefreshDialogOutput()
+    static void StretchStoryCreationDialogScroll(TutorialLelePanelView panel)
     {
-        if (_panel?.dialogOutput == null)
+        if (panel?.dialogScroll == null)
             return;
 
-        _panel.dialogOutput.text = _dialog.ToString();
-        if (_panel.dialogScroll != null)
-            Canvas.ForceUpdateCanvases();
+        var scrollRt = panel.dialogScroll.GetComponent<RectTransform>();
+        if (scrollRt == null)
+            return;
+
+        scrollRt.offsetMin = new Vector2(14f, 92f);
+        scrollRt.offsetMax = new Vector2(-14f, -108f);
     }
 
     void OnDisable() => StopFreeListening();

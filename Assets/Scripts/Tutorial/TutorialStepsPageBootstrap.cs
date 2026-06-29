@@ -127,7 +127,8 @@ public class TutorialStepsPageBootstrap : MonoBehaviour
             viewer,
             tutorGatewayBaseUrl,
             TutorialUiArt.Font,
-            enableVoiceTutor);
+            enableVoiceTutor,
+            transform);
     }
 
     void OnBackClicked()

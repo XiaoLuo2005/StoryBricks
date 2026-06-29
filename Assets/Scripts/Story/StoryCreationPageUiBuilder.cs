@@ -91,6 +91,7 @@ public static class StoryCreationPageUiBuilder
         BuildStatusPanel(view, root);
         BuildCameraPreviewUi(view, root);
         BuildPageCaptionPanel(view, root);
+        BuildStoryToggleButton(view, root);
 
         view.backgroundImage.transform.SetAsFirstSibling();
         if (view.statusPanel != null)
@@ -110,31 +111,54 @@ public static class StoryCreationPageUiBuilder
         var panelRt = view.pageCaptionPanel.GetComponent<RectTransform>();
         panelRt.SetParent(root, false);
         panelRt.anchorMin = new Vector2(0f, 0f);
-        panelRt.anchorMax = new Vector2(1f, 0f);
-        panelRt.pivot = new Vector2(0.5f, 0f);
-        panelRt.sizeDelta = new Vector2(-EdgePadding * 2f, 108f);
-        panelRt.anchoredPosition = new Vector2(0f, BottomInset + PrimaryButtonSize.y + 16f);
+        panelRt.anchorMax = new Vector2(0f, 0f);
+        panelRt.pivot = new Vector2(0f, 0f);
+        panelRt.sizeDelta = new Vector2(580f, 168f);
+        panelRt.anchoredPosition = new Vector2(EdgePadding, BottomInset + PrimaryButtonSize.y + 20f);
 
         var bg = view.pageCaptionPanel.AddComponent<Image>();
-        bg.color = new Color32(20, 24, 32, 150);
+        bg.color = new Color32(255, 252, 245, 210);
         bg.raycastTarget = false;
 
-        var textGo = new GameObject("CaptionText", typeof(RectTransform));
-        textGo.layer = LayerMask.NameToLayer("UI");
-        var textRt = textGo.GetComponent<RectTransform>();
-        textRt.SetParent(panelRt, false);
-        StretchFull(textRt);
-        textRt.offsetMin = new Vector2(16f, 12f);
-        textRt.offsetMax = new Vector2(-16f, -12f);
-
-        view.pageCaptionText = textGo.AddComponent<TextMeshProUGUI>();
+        view.pageCaptionText = CompletedStoryRuntimeUi.CreateScrollableStoryText(
+            panelRt,
+            "CaptionScroll",
+            "CaptionText",
+            0f,
+            0f,
+            1f,
+            1f,
+            new Vector2(16f, 12f),
+            new Vector2(-16f, -44f));
         view.pageCaptionFont = StoryPageCaptionArt.ResolveFont(view.pageCaptionFont);
-        StoryPageCaptionArt.ApplyCaptionStyle(
+        StoryPageCaptionArt.ApplyScrollableStoryTextStyle(
             view.pageCaptionText,
             view.pageCaptionFont,
-            StoryPageCaptionArt.DefaultMaxChars);
+            30f,
+            TextAlignmentOptions.TopLeft);
         view.pageCaptionText.text = "";
-        view.pageCaptionPanel.SetActive(false);
+        view.storyCloseButton = CompletedStoryRuntimeUi.CreateStoryPanelCloseButton(panelRt);
+        view.pageCaptionPanel.SetActive(true);
+    }
+
+    static void BuildStoryToggleButton(StoryCreationPageView view, RectTransform root)
+    {
+        float panelBottom = BottomInset + PrimaryButtonSize.y + 20f;
+        const float panelHeight = 168f;
+
+        view.storyToggleButton = CreateFloatingButton(
+            root,
+            "StoryToggleButton",
+            "故事阅读",
+            new Vector2(168f, 64f),
+            false);
+        var rt = view.storyToggleButton.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 0f);
+        rt.anchorMax = new Vector2(0f, 0f);
+        rt.pivot = new Vector2(0f, 0f);
+        rt.anchoredPosition = new Vector2(
+            EdgePadding,
+            panelBottom + panelHeight + 12f);
     }
 
     static Button CreateBackButton(RectTransform root)

@@ -1,3 +1,4 @@
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
@@ -7,17 +8,18 @@ using UnityEngine.SceneManagement;
 [DisallowMultipleComponent]
 public class CompletedStoryViewerRoot : MonoBehaviour
 {
-    const float EdgePadding = 64f;
-    const float BottomInset = 56f;
-    const float ButtonSpacing = 36f;
-    static readonly Vector2 NavButtonSize = new Vector2(200f, 200f);
-
     public string backSceneName = StoryFlowScenes.CompletedStoryLibrary;
     public string missingSelectionSceneName = StoryFlowScenes.CompletedStoryLibrary;
     public string exitButtonLabel = "← 退出";
 
+    [Header("UI（Prefab / 场景可视化编辑）")]
+    public CompletedStoryViewerPageView pageView;
+    public CompletedStoryViewerPageView pageViewPrefab;
+    public bool allowRuntimeFallbackUi = true;
+
     Image _pageImage;
-    Text _captionText;
+    CompletedStoryRuntimeUi.StoryReaderPanelRefs _readerPanel;
+    TextMeshProUGUI _captionText;
     Text _indicatorText;
     Button _prevButton;
     Button _nextButton;
@@ -26,13 +28,21 @@ public class CompletedStoryViewerRoot : MonoBehaviour
     Button _stereoToggleButton;
     Text _vrHintText;
     MobileVrStoryTheater _vrTheater;
+    GyroPanorama360Player _panoramaPlayer;
+    CompletedStoryPageVoiceRecorder _voiceRecorder;
+    Button _storyToggleButton;
+    Button _storyCloseButton;
+    bool _storyPanelVisible;
+    bool _panoramaVrActive;
+    const string StoryToggleShowLabel = "故事阅读";
+    const string StoryToggleHideLabel = "收起故事";
 
     CompletedStoryStore.CompletedStorySaveFile _save;
     Sprite[] _sprites;
     CompletedStoryStore.CompletedStoryPageFile[] _pages;
     int _index;
-    Font _font;
     bool _uiBuilt;
+    bool _controlsWired;
 
     void Awake()
     {
@@ -51,42 +61,264 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         if (_uiBuilt)
             return;
 
-        _font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        EnsurePageView();
+        if (pageView == null || !pageView.IsComplete)
+        {
+            Debug.LogError("[CompletedStoryViewer] 未找到可用的 CompletedStoryViewerPageView。");
+            return;
+        }
+
+        BindFromPageView();
+        EnsureVrComponents();
+        WireControls();
+        BringControlsToFront();
+        _uiBuilt = true;
+    }
+
+    void EnsurePageView()
+    {
+        if (pageView != null && pageView.IsComplete)
+            return;
+
+        if (pageView != null)
+            pageView.WireFromSceneHierarchy();
+
+        if (pageView != null && pageView.IsComplete)
+            return;
+
+        if (pageView == null)
+        {
+            pageView = FindObjectOfType<CompletedStoryViewerPageView>();
+            if (pageView != null)
+                pageView.WireFromSceneHierarchy();
+        }
+
+        if (pageView != null && pageView.IsComplete)
+            return;
+
+        if (!allowRuntimeFallbackUi)
+            return;
+
+        if (pageViewPrefab == null)
+            pageViewPrefab = Resources.Load<CompletedStoryViewerPageView>("UI/CompletedStoryViewerPage");
+
+        if (pageViewPrefab != null && pageView == null)
+        {
+            pageView = Instantiate(pageViewPrefab);
+            pageView.name = pageViewPrefab.name;
+            return;
+        }
+
+        Debug.LogWarning(
+            "[CompletedStoryViewer] 未配置 pageView，正在运行时临时搭建 UI。" +
+            "请运行菜单 StoryBricks/我的故事/阅读场景保留现有布局并挂载。");
         CompletedStoryRuntimeUi.EnsureEventSystem();
+        pageView = CompletedStoryViewerUiBuilder.BuildPageView(null);
+    }
 
-        var canvas = CompletedStoryRuntimeUi.CreateOverlayCanvas("CompletedStoryViewerCanvas");
-        CompletedStoryRuntimeUi.EnsureCanvasScaler(canvas);
+    void BindFromPageView()
+    {
+        _pageImage = pageView.pageImage;
+        _captionText = pageView.storyText;
+        if (_captionText != null)
+            StoryPageCaptionArt.ApplyReaderCaptionStyle(_captionText, StoryPageCaptionArt.ResolveFont(null));
+        _readerPanel = new CompletedStoryRuntimeUi.StoryReaderPanelRefs
+        {
+            root = pageView.storyReaderPanelRoot,
+            storyText = pageView.storyText,
+            recordButton = pageView.recordButton,
+            playButton = pageView.playButton,
+            rerecordButton = pageView.rerecordButton,
+            statusText = pageView.voiceStatusText,
+            closeButton = pageView.storyCloseButton,
+        };
+        _prevButton = pageView.prevPageButton;
+        _nextButton = pageView.nextPageButton;
+        _indicatorText = pageView.pageIndicatorText;
+        _exitButton = pageView.exitButton;
+        _vrToggleButton = pageView.vrToggleButton;
+        _stereoToggleButton = pageView.stereoToggleButton;
+        _vrHintText = pageView.vrHintText;
+        _storyToggleButton = pageView.storyToggleButton;
+        _storyCloseButton = pageView.storyCloseButton ?? _readerPanel?.closeButton;
 
-        _pageImage = CompletedStoryRuntimeUi.CreateFullScreenImage(canvas.transform, "PageImage");
-        _captionText = CompletedStoryRuntimeUi.CreateBottomCaption(canvas.transform, _font);
-        (_prevButton, _nextButton, _indicatorText) =
-            CompletedStoryRuntimeUi.CreateBottomNav(canvas.transform, _font, NavButtonSize, EdgePadding, BottomInset, ButtonSpacing);
+        if (_exitButton != null)
+            StoryFlowBackButtonUi.BindNavigation(_exitButton, exitButtonLabel, backSceneName);
 
-        _prevButton.onClick.AddListener(PrevPage);
-        _nextButton.onClick.AddListener(NextPage);
+        EnsureStoryToggleButton();
+        RefreshStoryReaderUi();
+    }
 
-        _exitButton = StoryFlowBackButtonUi.EnsureTopLeft(canvas, exitButtonLabel, backSceneName);
+    void EnsureStoryToggleButton()
+    {
+        if (pageView == null)
+            return;
 
+        pageView.EnsureStoryToggleButton();
+        _storyToggleButton = pageView.storyToggleButton;
+        _storyCloseButton = pageView.storyCloseButton;
+        if (_storyCloseButton == null && pageView.storyReaderPanelRoot != null)
+        {
+            var close = pageView.storyReaderPanelRoot.Find("StoryCloseButton");
+            if (close != null)
+            {
+                _storyCloseButton = close.GetComponent<Button>();
+                pageView.storyCloseButton = _storyCloseButton;
+            }
+        }
+
+        WireStoryToggleClick();
+        WireStoryCloseClick();
+    }
+
+    void WireStoryCloseClick()
+    {
+        if (_storyCloseButton == null)
+            return;
+
+        _storyCloseButton.onClick.RemoveAllListeners();
+        _storyCloseButton.onClick.AddListener(CollapseStoryPanel);
+    }
+
+    void WireStoryToggleClick()
+    {
+        if (_storyToggleButton == null)
+            return;
+
+        _storyToggleButton.onClick.RemoveAllListeners();
+        _storyToggleButton.onClick.AddListener(ToggleStoryPanel);
+    }
+
+    void EnsureVrComponents()
+    {
         _vrTheater = GetComponent<MobileVrStoryTheater>();
         if (_vrTheater == null)
             _vrTheater = gameObject.AddComponent<MobileVrStoryTheater>();
 
-        _vrToggleButton = CreateTopBarButton(canvas.transform, "VrToggleButton", "沉浸 VR", 0);
-        _vrToggleButton.onClick.AddListener(ToggleVrMode);
+        _panoramaPlayer = GetComponent<GyroPanorama360Player>();
+        if (_panoramaPlayer == null)
+            _panoramaPlayer = gameObject.AddComponent<GyroPanorama360Player>();
+    }
 
-        _stereoToggleButton = CreateTopBarButton(canvas.transform, "StereoToggleButton", "立体分屏", 1);
-        _stereoToggleButton.gameObject.SetActive(false);
-        _stereoToggleButton.onClick.AddListener(ToggleStereoMode);
+    void WireControls()
+    {
+        if (_controlsWired)
+            return;
 
-        _vrHintText = CreateVrHint(canvas.transform);
+        _voiceRecorder = GetComponent<CompletedStoryPageVoiceRecorder>();
+        if (_voiceRecorder == null)
+            _voiceRecorder = gameObject.AddComponent<CompletedStoryPageVoiceRecorder>();
 
-        BringControlsToFront();
+        if (_readerPanel?.recordButton != null)
+        {
+            _readerPanel.recordButton.onClick.RemoveAllListeners();
+            _readerPanel.recordButton.onClick.AddListener(() => _voiceRecorder.OnRecordClicked());
+        }
 
-        _uiBuilt = true;
+        if (_readerPanel?.playButton != null)
+        {
+            _readerPanel.playButton.onClick.RemoveAllListeners();
+            _readerPanel.playButton.onClick.AddListener(() => _voiceRecorder.OnPlayClicked());
+        }
+
+        if (_readerPanel?.rerecordButton != null)
+        {
+            _readerPanel.rerecordButton.onClick.RemoveAllListeners();
+            _readerPanel.rerecordButton.onClick.AddListener(() => _voiceRecorder.OnRerecordClicked());
+        }
+
+        if (_prevButton != null)
+        {
+            _prevButton.onClick.RemoveAllListeners();
+            _prevButton.onClick.AddListener(PrevPage);
+        }
+
+        if (_nextButton != null)
+        {
+            _nextButton.onClick.RemoveAllListeners();
+            _nextButton.onClick.AddListener(NextPage);
+        }
+
+        if (_vrToggleButton != null)
+        {
+            _vrToggleButton.onClick.RemoveAllListeners();
+            _vrToggleButton.onClick.AddListener(ToggleVrMode);
+        }
+
+        if (_stereoToggleButton != null)
+        {
+            _stereoToggleButton.gameObject.SetActive(false);
+            _stereoToggleButton.onClick.RemoveAllListeners();
+            _stereoToggleButton.onClick.AddListener(ToggleStereoMode);
+        }
+
+        if (_storyCloseButton == null && _readerPanel?.root != null)
+        {
+            var close = _readerPanel.root.Find("StoryCloseButton");
+            if (close != null)
+                _storyCloseButton = close.GetComponent<Button>();
+        }
+
+        WireStoryToggleClick();
+        WireStoryCloseClick();
+
+        _controlsWired = true;
+    }
+
+    void ToggleStoryPanel()
+    {
+        if (_captionText == null || string.IsNullOrWhiteSpace(_captionText.text))
+            return;
+
+        _storyPanelVisible = !_storyPanelVisible;
+        RefreshStoryReaderUi();
+    }
+
+    void CollapseStoryPanel()
+    {
+        if (!_storyPanelVisible)
+            return;
+
+        _storyPanelVisible = false;
+        RefreshStoryReaderUi();
+    }
+
+    void RefreshStoryReaderUi()
+    {
+        bool hasCaption = _captionText != null && !string.IsNullOrWhiteSpace(_captionText.text);
+        bool flatVisible = _pageImage == null || _pageImage.enabled;
+        bool useToggle = _storyToggleButton != null;
+
+        if (_storyToggleButton != null)
+        {
+            _storyToggleButton.gameObject.SetActive(flatVisible);
+            _storyToggleButton.interactable = hasCaption;
+            CompletedStoryRuntimeUi.ApplyStoryToggleLayout(_storyToggleButton.GetComponent<RectTransform>());
+            CompletedStoryRuntimeUi.SetStoryToggleLabel(
+                _storyToggleButton,
+                _storyPanelVisible ? StoryToggleHideLabel : StoryToggleShowLabel);
+        }
+
+        if (_readerPanel?.root != null)
+        {
+            bool showPanel = hasCaption && flatVisible && (!useToggle || _storyPanelVisible);
+            _readerPanel.root.gameObject.SetActive(showPanel);
+        }
+
+        BringStoryToggleToFront();
+    }
+
+    void BringStoryToggleToFront()
+    {
+        if (_readerPanel?.root != null && _readerPanel.root.gameObject.activeSelf)
+            _readerPanel.root.SetAsLastSibling();
+        if (_storyToggleButton != null)
+            _storyToggleButton.transform.SetAsLastSibling();
     }
 
     void BringControlsToFront()
     {
+        BringStoryToggleToFront();
         if (_captionText != null)
             _captionText.transform.SetAsLastSibling();
         if (_indicatorText != null)
@@ -158,7 +390,22 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         {
             string caption = GetPageCaption(page);
             _captionText.text = caption;
-            _captionText.gameObject.SetActive(!string.IsNullOrWhiteSpace(caption));
+            CompletedStoryRuntimeUi.ResetStoryTextScroll(_captionText);
+        }
+
+        _storyPanelVisible = false;
+        RefreshStoryReaderUi();
+
+        if (_voiceRecorder != null && _save != null)
+        {
+            _voiceRecorder.Bind(
+                _save.saveId,
+                _index,
+                _pages,
+                _readerPanel.recordButton,
+                _readerPanel.playButton,
+                _readerPanel.rerecordButton,
+                _readerPanel.statusText);
         }
 
         if (_indicatorText != null)
@@ -172,27 +419,82 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         if (_nextButton != null)
             _nextButton.interactable = index < _pages.Length - 1;
 
+        bool vrActive = (_vrTheater != null && _vrTheater.IsActive)
+            || (_panoramaPlayer != null && _panoramaPlayer.IsActive);
+        if (vrActive)
+        {
+            ExitAllVrModes();
+            EnterVrForCurrentPage();
+            if (_stereoToggleButton != null)
+                _stereoToggleButton.gameObject.SetActive(!_panoramaVrActive);
+            UpdateVrHint();
+        }
+    }
+
+    void ApplyPanoramaToPlayer(CompletedStoryStore.CompletedStoryPageFile page)
+    {
+        if (_panoramaPlayer == null || _save == null || page == null)
+            return;
+
+        string path = CompletedStoryStore.GetPagePanoramaPath(_save.saveId, page);
+        _panoramaPlayer.SetPageSource(null, path);
+    }
+
+    bool CurrentPageHasPanorama()
+    {
+        if (_save == null || _pages == null || _index < 0 || _index >= _pages.Length)
+            return false;
+        return !string.IsNullOrWhiteSpace(
+            CompletedStoryStore.GetPagePanoramaPath(_save.saveId, _pages[_index]));
+    }
+
+    void ExitAllVrModes()
+    {
         if (_vrTheater != null && _vrTheater.IsActive)
-            _vrTheater.SetPage(_sprites != null && index < _sprites.Length ? _sprites[index] : null, GetPageCaption(page));
+            _vrTheater.Exit();
+        if (_panoramaPlayer != null && _panoramaPlayer.IsActive)
+            _panoramaPlayer.Exit();
+        _panoramaVrActive = false;
+    }
+
+    void EnterVrForCurrentPage()
+    {
+        var page = _pages != null && _index < _pages.Length ? _pages[_index] : null;
+        bool hasPanorama = CurrentPageHasPanorama();
+
+        if (hasPanorama)
+        {
+            _panoramaVrActive = true;
+            _panoramaPlayer.Enter();
+            ApplyPanoramaToPlayer(page);
+        }
+        else
+        {
+            _panoramaVrActive = false;
+            _vrTheater.Enter();
+            _vrTheater.SetPage(
+                _sprites != null && _index < _sprites.Length ? _sprites[_index] : null,
+                GetPageCaption(page));
+        }
     }
 
     static string GetPageCaption(CompletedStoryStore.CompletedStoryPageFile page)
     {
         if (page == null)
             return "";
-        return !string.IsNullOrWhiteSpace(page.userVoiceAnswer)
-            ? page.userVoiceAnswer.Trim()
-            : page.generatedStoryText?.Trim() ?? "";
+        if (!string.IsNullOrWhiteSpace(page.generatedStoryText))
+            return page.generatedStoryText.Trim();
+        return page.userVoiceAnswer?.Trim() ?? "";
     }
 
     void ToggleVrMode()
     {
-        if (_vrTheater == null)
-            return;
+        bool anyVrActive = (_vrTheater != null && _vrTheater.IsActive)
+            || (_panoramaPlayer != null && _panoramaPlayer.IsActive);
 
-        if (_vrTheater.IsActive)
+        if (anyVrActive)
         {
-            _vrTheater.Exit();
+            ExitAllVrModes();
             SetFlatViewVisible(true);
             if (_stereoToggleButton != null)
                 _stereoToggleButton.gameObject.SetActive(false);
@@ -205,14 +507,10 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         }
         else
         {
-            _vrTheater.Enter();
-            var page = _pages != null && _index < _pages.Length ? _pages[_index] : null;
-            _vrTheater.SetPage(
-                _sprites != null && _index < _sprites.Length ? _sprites[_index] : null,
-                GetPageCaption(page));
+            EnterVrForCurrentPage();
             SetFlatViewVisible(false);
             if (_stereoToggleButton != null)
-                _stereoToggleButton.gameObject.SetActive(true);
+                _stereoToggleButton.gameObject.SetActive(!_panoramaVrActive);
             if (_vrToggleButton != null)
             {
                 var label = _vrToggleButton.GetComponentInChildren<Text>();
@@ -226,7 +524,7 @@ public class CompletedStoryViewerRoot : MonoBehaviour
 
     void ToggleStereoMode()
     {
-        if (_vrTheater == null || !_vrTheater.IsActive)
+        if (_vrTheater == null || !_vrTheater.IsActive || _panoramaVrActive)
             return;
 
         _vrTheater.SetStereoEnabled(!_vrTheater.StereoEnabled);
@@ -243,10 +541,11 @@ public class CompletedStoryViewerRoot : MonoBehaviour
     {
         if (_pageImage != null)
             _pageImage.enabled = visible;
-        if (_captionText != null && visible)
-            _captionText.gameObject.SetActive(!string.IsNullOrWhiteSpace(_captionText.text));
-        else if (_captionText != null)
-            _captionText.gameObject.SetActive(false);
+
+        if (!visible)
+            _storyPanelVisible = false;
+
+        RefreshStoryReaderUi();
     }
 
     void UpdateVrHint()
@@ -254,7 +553,10 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         if (_vrHintText == null)
             return;
 
-        if (_vrTheater == null || !_vrTheater.IsActive)
+        bool anyVrActive = (_vrTheater != null && _vrTheater.IsActive)
+            || (_panoramaPlayer != null && _panoramaPlayer.IsActive);
+
+        if (!anyVrActive)
         {
             _vrHintText.gameObject.SetActive(false);
             return;
@@ -264,74 +566,11 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         string lookHint = SystemInfo.supportsGyroscope
             ? "转动设备环视"
             : "按住鼠标拖拽环视";
-        string stereoHint = _vrTheater.StereoEnabled ? " · 立体分屏已开" : "";
-        _vrHintText.text = $"{lookHint}{stereoHint}";
-    }
-
-    static Button CreateTopBarButton(Transform parent, string name, string label, int columnIndex)
-    {
-        const float width = 200f;
-        const float height = 72f;
-        const float margin = 28f;
-        const float spacing = 16f;
-
-        var go = new GameObject(name, typeof(RectTransform));
-        go.layer = LayerMask.NameToLayer("UI");
-        var rt = go.GetComponent<RectTransform>();
-        rt.SetParent(parent, false);
-        rt.anchorMin = new Vector2(1f, 1f);
-        rt.anchorMax = new Vector2(1f, 1f);
-        rt.pivot = new Vector2(1f, 1f);
-        rt.sizeDelta = new Vector2(width, height);
-        rt.anchoredPosition = new Vector2(-margin - columnIndex * (width + spacing), -margin);
-
-        var img = go.AddComponent<Image>();
-        img.color = new Color32(235, 238, 245, 255);
-        var button = go.AddComponent<Button>();
-        button.targetGraphic = img;
-
-        var textGo = new GameObject("Label", typeof(RectTransform));
-        textGo.layer = LayerMask.NameToLayer("UI");
-        var textRt = textGo.GetComponent<RectTransform>();
-        textRt.SetParent(rt, false);
-        textRt.anchorMin = Vector2.zero;
-        textRt.anchorMax = Vector2.one;
-        textRt.offsetMin = Vector2.zero;
-        textRt.offsetMax = Vector2.zero;
-
-        var text = textGo.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 26;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = new Color32(40, 44, 52, 255);
-        text.text = label;
-        return button;
-    }
-
-    static Text CreateVrHint(Transform parent)
-    {
-        var go = new GameObject("VrHint", typeof(RectTransform));
-        go.layer = LayerMask.NameToLayer("UI");
-        var rt = go.GetComponent<RectTransform>();
-        rt.SetParent(parent, false);
-        rt.anchorMin = new Vector2(0.5f, 1f);
-        rt.anchorMax = new Vector2(0.5f, 1f);
-        rt.pivot = new Vector2(0.5f, 1f);
-        rt.sizeDelta = new Vector2(900f, 56f);
-        rt.anchoredPosition = new Vector2(0f, -108f);
-
-        var text = go.AddComponent<Text>();
-        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 24;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = new Color32(255, 255, 255, 230);
-        text.text = "";
-        go.SetActive(false);
-
-        var outline = go.AddComponent<Outline>();
-        outline.effectColor = new Color32(0, 0, 0, 160);
-        outline.effectDistance = new Vector2(1f, -1f);
-        return text;
+        string modeHint = _panoramaVrActive ? " · 360° 全景" : "";
+        string stereoHint = !_panoramaVrActive && _vrTheater != null && _vrTheater.StereoEnabled
+            ? " · 立体分屏已开"
+            : "";
+        _vrHintText.text = $"{lookHint}{modeHint}{stereoHint}";
     }
 
     void PrevPage()

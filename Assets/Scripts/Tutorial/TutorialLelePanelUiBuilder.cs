@@ -74,13 +74,19 @@ public static class TutorialLelePanelUiBuilder
         var scroll = scrollGo.AddComponent<ScrollRect>();
         scroll.horizontal = false;
         scroll.vertical = true;
-        scroll.movementType = ScrollRect.MovementType.Clamped;
+        scroll.movementType = ScrollRect.MovementType.Elastic;
+        scroll.scrollSensitivity = 30f;
+
+        var scrollBg = scrollGo.AddComponent<Image>();
+        scrollBg.color = new Color(1f, 1f, 1f, 0.001f);
+        scrollBg.raycastTarget = true;
 
         var viewport = CreateUiChild(scrollGo.transform, "Viewport").GetComponent<RectTransform>();
         TutorialStepsPageUiBuilder.StretchFull(viewport);
         var vpImg = viewport.gameObject.AddComponent<Image>();
-        vpImg.color = new Color(1f, 1f, 1f, 0.12f);
-        viewport.gameObject.AddComponent<Mask>().showMaskGraphic = false;
+        vpImg.color = new Color(1f, 1f, 1f, 0.001f);
+        vpImg.raycastTarget = true;
+        viewport.gameObject.AddComponent<RectMask2D>();
 
         var content = CreateUiChild(viewport, "Content").GetComponent<RectTransform>();
         content.anchorMin = new Vector2(0f, 1f);
@@ -89,21 +95,21 @@ public static class TutorialLelePanelUiBuilder
         content.sizeDelta = new Vector2(0f, 0f);
         content.anchoredPosition = Vector2.zero;
 
-        output = CreateOutputText(content, font);
+        output = CreateDialogOutput(content, font);
         scroll.viewport = viewport;
         scroll.content = content;
         return scroll;
     }
 
-    static TextMeshProUGUI CreateOutputText(RectTransform content, TMP_FontAsset font)
+    static TextMeshProUGUI CreateDialogOutput(RectTransform content, TMP_FontAsset font)
     {
         var outputGo = CreateUiChild(content, "Output");
         var rt = outputGo.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 1f);
         rt.anchorMax = new Vector2(1f, 1f);
         rt.pivot = new Vector2(0f, 1f);
-        rt.sizeDelta = new Vector2(0f, 0f);
-        rt.anchoredPosition = Vector2.zero;
+        rt.anchoredPosition = new Vector2(8f, -8f);
+        rt.sizeDelta = new Vector2(-16f, 0f);
 
         var text = outputGo.AddComponent<TextMeshProUGUI>();
         if (font != null)
@@ -112,9 +118,10 @@ public static class TutorialLelePanelUiBuilder
         text.color = TutorialUiArt.BodyBrown;
         text.alignment = TextAlignmentOptions.TopLeft;
         text.enableWordWrapping = true;
+        text.richText = true;
         text.overflowMode = TextOverflowModes.Overflow;
-        text.text =
-            $"你好！我是{LeleVoiceAssistant.DisplayName}。先说「{LeleVoiceAssistant.WakePhrase}」唤醒我，再提问。";
+        text.raycastTarget = false;
+        text.text = "";
 
         var csf = outputGo.AddComponent<ContentSizeFitter>();
         csf.horizontalFit = ContentSizeFitter.FitMode.Unconstrained;
@@ -139,7 +146,7 @@ public static class TutorialLelePanelUiBuilder
         var label = CreateUiLabel(
             listenGo.transform,
             "ListenLabel",
-            LeleVoiceAssistant.WakeHint,
+            LeleVoiceAssistant.ListeningHint,
             24,
             TextAlignmentOptions.Center);
         TutorialStepsPageUiBuilder.StretchFull(label.rectTransform);

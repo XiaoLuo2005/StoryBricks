@@ -8,6 +8,8 @@ public static class StoryLibraryUiBuilder
 {
     const string BackgroundResourcePath = "StorySummary/Background";
     const string TitleBannerResourcePath = "StorySummary/TitleBanner";
+    const string BrickLibraryTitleBannerResourcePath = "BrickLibrary/TitleBanner";
+    const string BrickLibraryHeaderSpritePath = "Assets/Art/积木库.png";
     const string CardPrefabResourcePath = "UI/StoryCard";
     const string TitleFontResourcePath = "UI/word SDF";
 
@@ -173,7 +175,118 @@ public static class StoryLibraryUiBuilder
         return view;
     }
 
-    static Button CreateBackButton(Transform canvasTransform)
+    /// <summary>积木库页：图片顶栏 + 滚动列表 + 返回按钮，供 Prefab / 场景可视化编辑。</summary>
+    public static StoryLibraryPageView BuildBrickLibraryPageView(Transform parent)
+    {
+        if (Application.isPlaying)
+        {
+            EnsureEventSystem();
+            EnsureMainCamera();
+        }
+
+        var decorRoot = EnsureBrickLibraryDecor();
+
+        var canvasGo = new GameObject("BrickLibraryCanvas", typeof(RectTransform), typeof(Canvas), typeof(GraphicRaycaster));
+        canvasGo.layer = LayerMask.NameToLayer("UI");
+        if (parent != null)
+            canvasGo.transform.SetParent(parent, false);
+
+        var canvas = canvasGo.GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+        var scaler = canvasGo.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+        scaler.referenceResolution = new Vector2(1920f, 1080f);
+        scaler.matchWidthOrHeight = 0.5f;
+        Stretch(canvasGo.GetComponent<RectTransform>());
+
+        var view = canvasGo.AddComponent<StoryLibraryPageView>();
+        view.canvas = canvas;
+        view.decorRoot = decorRoot;
+
+        var header = Child(canvas.transform, "HeaderTitle");
+        var headerRt = header.GetComponent<RectTransform>();
+        headerRt.anchorMin = new Vector2(0.5f, 1f);
+        headerRt.anchorMax = new Vector2(0.5f, 1f);
+        headerRt.pivot = new Vector2(0.5f, 1f);
+        headerRt.sizeDelta = new Vector2(520f, 140f);
+        headerRt.anchoredPosition = new Vector2(0f, -52f);
+        var headerImg = header.AddComponent<Image>();
+        headerImg.preserveAspect = true;
+        headerImg.raycastTarget = false;
+#if UNITY_EDITOR
+        var headerSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>(BrickLibraryHeaderSpritePath);
+        if (headerSprite != null)
+            headerImg.sprite = headerSprite;
+#endif
+        view.headerTitleImage = headerImg;
+
+        var scroll = Child(canvas.transform, "ScrollView");
+        var scrollRt = scroll.GetComponent<RectTransform>();
+        Stretch(scrollRt);
+        scrollRt.offsetMax = new Vector2(0f, -110f);
+        var scrollRect = scroll.AddComponent<ScrollRect>();
+        scrollRect.horizontal = false;
+        scrollRect.vertical = true;
+
+        var viewport = Child(scroll.transform, "Viewport");
+        Stretch(viewport.GetComponent<RectTransform>());
+        viewport.AddComponent<Image>().color = new Color(1f, 1f, 1f, 0.01f);
+        viewport.AddComponent<Mask>().showMaskGraphic = false;
+
+        var content = Child(viewport.transform, "Content");
+        var contentRt = content.GetComponent<RectTransform>();
+        contentRt.anchorMin = new Vector2(0f, 1f);
+        contentRt.anchorMax = new Vector2(1f, 1f);
+        contentRt.pivot = new Vector2(0.5f, 1f);
+        contentRt.sizeDelta = new Vector2(0f, 800f);
+        var grid = content.AddComponent<GridLayoutGroup>();
+        grid.cellSize = new Vector2(320f, 380f);
+        grid.spacing = new Vector2(28f, 28f);
+        grid.constraint = GridLayoutGroup.Constraint.FixedColumnCount;
+        grid.constraintCount = 3;
+
+        scrollRect.viewport = viewport.GetComponent<RectTransform>();
+        scrollRect.content = contentRt;
+        view.scrollRect = scrollRect;
+        view.cardListContent = contentRt;
+        view.emptyHint = null;
+        view.backButton = CreateBackButton(canvas.transform);
+
+        return view;
+    }
+
+    public static Transform EnsureBrickLibraryDecorVisible()
+    {
+        return EnsureBrickLibraryDecor();
+    }
+
+    static Transform EnsureBrickLibraryDecor()
+    {
+        var existing = GameObject.Find("StoryLibraryDecor");
+        if (existing != null)
+            return existing.transform;
+
+        var root = new GameObject("StoryLibraryDecor");
+
+        var background = Resources.Load<Sprite>(BackgroundResourcePath);
+        if (background != null)
+            SpawnSprite(root.transform, "Background", background, BackgroundPosition, Vector3.one, 0);
+
+        var titleBanner = Resources.Load<Sprite>(BrickLibraryTitleBannerResourcePath);
+        if (titleBanner != null)
+            SpawnSprite(
+                root.transform,
+                "TitleBanner",
+                titleBanner,
+                TitleBannerPosition,
+                Vector3.one * TitleBannerScale,
+                1);
+
+        return root.transform;
+    }
+
+    public static Button CreateBackButton(Transform canvasTransform)
     {
         var go = Child(canvasTransform, "BackButton");
         var rt = go.GetComponent<RectTransform>();

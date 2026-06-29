@@ -106,4 +106,16 @@ async function ttsToAudioBase64(inputText) {
   return edgeTtsToWavBase64(inputText);
 }
 
-module.exports = { ttsToAudioBase64 };
+/** 教程/实时场景：有 Dash 时优先 CosyVoice（比 Edge+ffmpeg 快很多）。 */
+async function ttsToAudioBase64Fast(inputText) {
+  if (hasDashScope()) {
+    try {
+      return await dashTtsToWavBase64(inputText);
+    } catch (e) {
+      console.warn("[tts] fast dash 失败，回退:", e.message);
+    }
+  }
+  return ttsToAudioBase64(inputText);
+}
+
+module.exports = { ttsToAudioBase64, ttsToAudioBase64Fast, dashTtsToWavBase64 };

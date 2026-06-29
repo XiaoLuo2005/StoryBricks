@@ -36,6 +36,23 @@ public static class StoryBricksSetupBrickLibrary
             ? EditorSceneManager.OpenScene(ScenePath, OpenSceneMode.Single)
             : EditorSceneManager.NewScene(NewSceneSetup.DefaultGameObjects, NewSceneMode.Single);
 
+        var existingPortfolio = Object.FindObjectOfType<BrickPortfolioRoot>();
+        var existingCanvas = Object.FindObjectOfType<Canvas>();
+        if (existingPortfolio != null && existingCanvas != null &&
+            (existingPortfolio.pageView?.IsComplete == true || existingPortfolio.cardListContent != null))
+        {
+            StoryBricksSetupBrickLibraryUi.WireCanvasToPortfolio(existingPortfolio, existingCanvas.gameObject);
+            EditorSceneManager.MarkSceneDirty(existingCanvas.gameObject.scene);
+            EditorUtility.DisplayDialog(
+                "保留现有 UI",
+                "场景里已有 Canvas 布局，未覆盖。\n\n" +
+                "已绑定 StoryLibraryPageView，可直接在 Hierarchy 编辑 Canvas / HeaderTitle / ScrollView / BackButton。\n" +
+                "改完布局后可用：StoryBricks → BrickLibrary → 将当前场景 UI 布局保存到共用 Prefab。",
+                "好的");
+            StoryBricksBuildSettings.EnsureSceneEnabled(ScenePath);
+            return;
+        }
+
         foreach (var root in scene.GetRootGameObjects().ToArray())
         {
             if (root.GetComponent<Canvas>() != null ||

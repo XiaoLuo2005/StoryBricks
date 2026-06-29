@@ -101,6 +101,7 @@ function buildStoryCreationImagePromptMessages(body) {
   const previous = String(body.previousSummary || "").trim();
   const voice = String(body.voiceSupplement || "").trim();
   const roles = String(body.detectedRolesDescription || "").trim();
+  const mandatory = String(body.mandatoryRolesClause || "").trim();
   const refClause = String(body.referenceImageClause || "").trim();
   const isContinuation = Boolean(body.isContinuationPage);
 
@@ -111,6 +112,7 @@ function buildStoryCreationImagePromptMessages(body) {
 - 长度约 120～280 字，信息密度高，画面感强。
 - 必须融合：画风要求、本页场景、前情延续、孩子补充的角色行为与道具，写成统一叙事，禁止「前情：」「儿童语音补充：」等标签式罗列。
 - 明确写出出场角色及其动作、站位、表情；环境背景要具体（地点、时间感、关键物体）。
+- 若提供了 mandatoryRolesClause，必须严格遵守：镜头里已识别的每个角色都要画进画面，不得只画对话里提到的角色。
 - 已有参考图锁定角色外貌，描述中写角色名即可。
 - 禁止输出「参考图1」「图1的…外貌」「生成儿童绘本插画」等 img2img 套话（程序会自动加在句首）。
 - 横版 16:9 构图；角色不要特写大头；留出天空与背景。
@@ -125,6 +127,7 @@ function buildStoryCreationImagePromptMessages(body) {
     previous && `前情摘要：${previous}`,
     voice && `孩子补充：${voice}`,
     roles && `本页识别到的角色：${roles}`,
+    mandatory && `角色硬性要求：${mandatory}`,
     refClause && `（程序句首会自动附加：${refClause}）`,
     `是否续页：${isContinuation ? "是，需新场景" : "否，首页"}`,
     "",
@@ -289,6 +292,7 @@ async function buildStoryCreationPageCaption(body) {
 - 语气温暖、像老师在给孩子讲故事；句子短，口语化，适合朗读。
 - 可自然融入角色简短对话（如：兔子说：「我再睡一会儿。」），但不要写成剧本格式。
 - 必须与前情、本页场景一致，保留孩子共创的内容。
+- 若对话只提到部分角色，旁白仍要覆盖镜头里全部角色（可简短交代未发言角色的状态）。
 - 全角汉字与标点合计不超过 ${maxChars} 字；超出则自行删减。
 - 禁止出现「本页」「小朋友」「AI」等元叙述；禁止标题、编号、markdown。
 - 只输出一段正文。`;
@@ -383,7 +387,8 @@ async function buildStoryCreationExtractPageStory(body) {
 ## 输入
 - 对话记录（孩子+乐乐，可能很碎）
 - 本页场景、前情、镜头里有哪些角色
-- 期望缺口（角色行为/站位/可选元素）——仅作检查清单，不要逐条问卷
+- 期望缺口（角色行为/可选元素）——仅作检查清单，不要逐条问卷
+- 若提供 arucoPlacement，表示摄像头已识别角色相对站位，必须写进 voiceSupplement，且 missingField 不得为 position，followUpQuestion 不得追问站位
 
 ## 输出（只输出 JSON，无 markdown）
 {
@@ -413,6 +418,7 @@ async function buildStoryCreationExtractPageStory(body) {
     body.previousSummary && `前情：${body.previousSummary}`,
     body.rosterHint && `当前摆放：${body.rosterHint}`,
     body.detectedRoles && `镜头角色：${body.detectedRoles}`,
+    body.arucoPlacement && `摄像头识别站位：${body.arucoPlacement}`,
     gapBlock && `期望缺口：\n${gapBlock}`,
     body.conversationLog && `对话记录：\n${body.conversationLog}`,
     "",

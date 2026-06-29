@@ -19,6 +19,7 @@ public static class StorySessionCache
         public string generatedStoryText = "";
         public string generatedImageNote = "";
         public string generatedImageUrl = "";
+        public string panoramaImageUrl = "";
         [TextArea(2, 8)]
         public string generationPrompt = "";
     }
@@ -30,6 +31,7 @@ public static class StorySessionCache
     static Texture2D _anchorPageTexture;
     static readonly List<PageRecord> _completedPages = new List<PageRecord>();
     static readonly List<Texture2D> _pageTextures = new List<Texture2D>();
+    static readonly List<Texture2D> _pagePanoramaTextures = new List<Texture2D>();
 
     public static string StoryId => _storyId;
     public static string StoryTitle => _storyTitle;
@@ -74,7 +76,7 @@ public static class StorySessionCache
         _currentPageIndex = Math.Max(0, index);
     }
 
-    public static void RecordCompletedPage(PageRecord record, Texture2D pageTexture, int pageIndex)
+    public static void RecordCompletedPage(PageRecord record, Texture2D pageTexture, int pageIndex, Texture2D panoramaTexture = null)
     {
         if (record == null || pageIndex < 0)
             return;
@@ -82,8 +84,10 @@ public static class StorySessionCache
         if (_completedPages.Count > pageIndex)
         {
             DestroyPageTextureAt(pageIndex);
+            DestroyPanoramaTextureAt(pageIndex);
             _completedPages[pageIndex] = record;
             _pageTextures[pageIndex] = DuplicatePageTexture(pageTexture);
+            _pagePanoramaTextures[pageIndex] = DuplicatePageTexture(panoramaTexture);
             return;
         }
 
@@ -91,7 +95,15 @@ public static class StorySessionCache
         {
             _completedPages.Add(record);
             _pageTextures.Add(DuplicatePageTexture(pageTexture));
+            _pagePanoramaTextures.Add(DuplicatePageTexture(panoramaTexture));
         }
+    }
+
+    public static Texture2D GetPagePanoramaTexture(int pageIndex)
+    {
+        if (pageIndex < 0 || pageIndex >= _pagePanoramaTextures.Count)
+            return null;
+        return _pagePanoramaTextures[pageIndex];
     }
 
     public static Texture2D GetPageTexture(int pageIndex)
@@ -180,6 +192,17 @@ public static class StorySessionCache
         }
     }
 
+    static void DestroyPanoramaTextureAt(int index)
+    {
+        if (index < 0 || index >= _pagePanoramaTextures.Count)
+            return;
+        if (_pagePanoramaTextures[index] != null)
+        {
+            UnityEngine.Object.Destroy(_pagePanoramaTextures[index]);
+            _pagePanoramaTextures[index] = null;
+        }
+    }
+
     static void ClearPageTextures()
     {
         for (int i = 0; i < _pageTextures.Count; i++)
@@ -188,5 +211,12 @@ public static class StorySessionCache
                 UnityEngine.Object.Destroy(_pageTextures[i]);
         }
         _pageTextures.Clear();
+
+        for (int i = 0; i < _pagePanoramaTextures.Count; i++)
+        {
+            if (_pagePanoramaTextures[i] != null)
+                UnityEngine.Object.Destroy(_pagePanoramaTextures[i]);
+        }
+        _pagePanoramaTextures.Clear();
     }
 }

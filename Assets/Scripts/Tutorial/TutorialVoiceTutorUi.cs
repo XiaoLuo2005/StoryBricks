@@ -11,10 +11,14 @@ public static class TutorialVoiceTutorUi
         StepViewerUI viewer,
         string gatewayBaseUrl,
         TMP_FontAsset font,
-        bool enable)
+        bool enable,
+        Transform voiceHostParent = null)
     {
         if (!enable || string.IsNullOrWhiteSpace(gatewayBaseUrl) || config == null || viewer == null)
+        {
+            Debug.LogWarning("[TutorialVoiceTutorUi] 语音助手未启用或缺少 config/viewer。");
             return;
+        }
 
         if (lelePanelRoot == null)
         {
@@ -33,11 +37,12 @@ public static class TutorialVoiceTutorUi
             panelView = TutorialLelePanelUiBuilder.Build(lelePanelRoot);
         }
 
-        var ctrl = lelePanelRoot.GetComponent<TutorialVoiceTutorController>();
+        var hostParent = voiceHostParent != null ? voiceHostParent : lelePanelRoot;
+        var ctrl = hostParent.GetComponent<TutorialVoiceTutorController>();
         if (ctrl == null)
-            ctrl = lelePanelRoot.gameObject.AddComponent<TutorialVoiceTutorController>();
+            ctrl = hostParent.gameObject.AddComponent<TutorialVoiceTutorController>();
 
-        ctrl.Initialize(config, viewer, gatewayBaseUrl, font != null ? font : TutorialUiArt.Font);
+        ctrl.Initialize(config, viewer, gatewayBaseUrl, font != null ? font : TutorialUiArt.Font, hostParent);
         ctrl.BindPanel(panelView);
     }
 }

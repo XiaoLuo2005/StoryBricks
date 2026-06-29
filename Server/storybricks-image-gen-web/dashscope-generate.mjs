@@ -178,6 +178,8 @@ function sleep(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+export { getApiKey, asyncTextToImage, syncImageEdit };
+
 /**
  * @param {Record<string, unknown>} body
  * @returns {Promise<{ status: number, json: Record<string, unknown> }>}
