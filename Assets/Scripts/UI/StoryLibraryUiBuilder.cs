@@ -315,6 +315,103 @@ public static class StoryLibraryUiBuilder
         return btn;
     }
 
+    /// <summary>StoryWorks 左上角导航（与运行时 StoryFlowBackButtonUi 默认布局一致，供场景可视化编辑）。</summary>
+    public static Button CreateTopLeftNavButton(
+        Transform canvasTransform,
+        string objectName,
+        string label,
+        int columnIndex = 0)
+    {
+        const float buttonWidth = 200f;
+        const float buttonHeight = 72f;
+        const float margin = 28f;
+        const float buttonSpacing = 16f;
+
+        var go = Child(canvasTransform, objectName);
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(0f, 1f);
+        rt.anchorMax = new Vector2(0f, 1f);
+        rt.pivot = new Vector2(0f, 1f);
+        rt.anchoredPosition = new Vector2(
+            margin + columnIndex * (buttonWidth + buttonSpacing),
+            -margin);
+        rt.sizeDelta = new Vector2(buttonWidth, buttonHeight);
+
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(235, 238, 245, 255);
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        var labelGo = Child(go.transform, "Label");
+        Stretch(labelGo.GetComponent<RectTransform>());
+        var text = labelGo.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 26;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = new Color32(40, 44, 52, 255);
+        text.text = label;
+
+        return btn;
+    }
+
+    /// <summary>StoryWorks 右下角「开始创作故事」按钮，供场景可视化编辑。</summary>
+    public static Button CreateStartCreationButton(Transform canvasTransform, string label)
+    {
+        var go = Child(canvasTransform, "StartCreationButton");
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(1f, 0f);
+        rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(1f, 0f);
+        rt.sizeDelta = new Vector2(280f, 88f);
+        rt.anchoredPosition = new Vector2(-40f, 40f);
+
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(52, 168, 83, 255);
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        var labelGo = Child(go.transform, "Label");
+        Stretch(labelGo.GetComponent<RectTransform>());
+        var text = labelGo.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 30;
+        text.fontStyle = FontStyle.Bold;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.white;
+        text.text = label;
+
+        return btn;
+    }
+
+    /// <summary>StoryLibrary 右下角「我的故事」按钮，供场景可视化编辑。</summary>
+    public static Button CreateMyStoriesButton(Transform canvasTransform, string label)
+    {
+        var go = Child(canvasTransform, "MyStoriesButton");
+        var rt = go.GetComponent<RectTransform>();
+        rt.anchorMin = new Vector2(1f, 0f);
+        rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(1f, 0f);
+        rt.sizeDelta = new Vector2(280f, 88f);
+        rt.anchoredPosition = new Vector2(-40f, 40f);
+
+        var img = go.AddComponent<Image>();
+        TutorialUiArt.ApplyButtonBackground(img);
+        var btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        var labelGo = Child(go.transform, "Label");
+        Stretch(labelGo.GetComponent<RectTransform>());
+        var text = labelGo.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 30;
+        text.fontStyle = FontStyle.Bold;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.white;
+        text.text = label;
+
+        return btn;
+    }
+
     public static StoryCardView LoadCardPrefab()
     {
         var prefab = Resources.Load<GameObject>(CardPrefabResourcePath);

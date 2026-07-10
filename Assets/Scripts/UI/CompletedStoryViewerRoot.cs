@@ -24,16 +24,16 @@ public class CompletedStoryViewerRoot : MonoBehaviour
     Button _prevButton;
     Button _nextButton;
     Button _exitButton;
-    Button _vrToggleButton;
-    Button _stereoToggleButton;
-    Text _vrHintText;
-    MobileVrStoryTheater _vrTheater;
+    Button _panoramaToggleButton;
+    Text _panoramaHintText;
     GyroPanorama360Player _panoramaPlayer;
     CompletedStoryPageVoiceRecorder _voiceRecorder;
     Button _storyToggleButton;
     Button _storyCloseButton;
     bool _storyPanelVisible;
-    bool _panoramaVrActive;
+    bool _panoramaActive;
+    const string PanoramaEnterLabel = "360° 全景";
+    const string PanoramaExitLabel = "退出全景";
     const string StoryToggleShowLabel = "故事阅读";
     const string StoryToggleHideLabel = "收起故事";
 
@@ -69,7 +69,7 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         }
 
         BindFromPageView();
-        EnsureVrComponents();
+        EnsurePanoramaPlayer();
         WireControls();
         BringControlsToFront();
         _uiBuilt = true;
@@ -136,17 +136,23 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         _nextButton = pageView.nextPageButton;
         _indicatorText = pageView.pageIndicatorText;
         _exitButton = pageView.exitButton;
-        _vrToggleButton = pageView.vrToggleButton;
-        _stereoToggleButton = pageView.stereoToggleButton;
-        _vrHintText = pageView.vrHintText;
+        _panoramaToggleButton = pageView.panoramaToggleButton ?? pageView.vrToggleButton;
+        _panoramaHintText = pageView.panoramaHintText ?? pageView.vrHintText;
         _storyToggleButton = pageView.storyToggleButton;
         _storyCloseButton = pageView.storyCloseButton ?? _readerPanel?.closeButton;
 
         if (_exitButton != null)
             StoryFlowBackButtonUi.BindNavigation(_exitButton, exitButtonLabel, backSceneName);
 
+        HideLegacyStereoButton();
         EnsureStoryToggleButton();
         RefreshStoryReaderUi();
+    }
+
+    void HideLegacyStereoButton()
+    {
+        if (pageView.stereoToggleButton != null)
+            pageView.stereoToggleButton.gameObject.SetActive(false);
     }
 
     void EnsureStoryToggleButton()
@@ -189,12 +195,8 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         _storyToggleButton.onClick.AddListener(ToggleStoryPanel);
     }
 
-    void EnsureVrComponents()
+    void EnsurePanoramaPlayer()
     {
-        _vrTheater = GetComponent<MobileVrStoryTheater>();
-        if (_vrTheater == null)
-            _vrTheater = gameObject.AddComponent<MobileVrStoryTheater>();
-
         _panoramaPlayer = GetComponent<GyroPanorama360Player>();
         if (_panoramaPlayer == null)
             _panoramaPlayer = gameObject.AddComponent<GyroPanorama360Player>();
@@ -239,17 +241,10 @@ public class CompletedStoryViewerRoot : MonoBehaviour
             _nextButton.onClick.AddListener(NextPage);
         }
 
-        if (_vrToggleButton != null)
+        if (_panoramaToggleButton != null)
         {
-            _vrToggleButton.onClick.RemoveAllListeners();
-            _vrToggleButton.onClick.AddListener(ToggleVrMode);
-        }
-
-        if (_stereoToggleButton != null)
-        {
-            _stereoToggleButton.gameObject.SetActive(false);
-            _stereoToggleButton.onClick.RemoveAllListeners();
-            _stereoToggleButton.onClick.AddListener(ToggleStereoMode);
+            _panoramaToggleButton.onClick.RemoveAllListeners();
+            _panoramaToggleButton.onClick.AddListener(TogglePanoramaMode);
         }
 
         if (_storyCloseButton == null && _readerPanel?.root != null)
@@ -329,12 +324,10 @@ public class CompletedStoryViewerRoot : MonoBehaviour
             _nextButton.transform.SetAsLastSibling();
         if (_exitButton != null)
             _exitButton.transform.SetAsLastSibling();
-        if (_vrToggleButton != null)
-            _vrToggleButton.transform.SetAsLastSibling();
-        if (_stereoToggleButton != null)
-            _stereoToggleButton.transform.SetAsLastSibling();
-        if (_vrHintText != null)
-            _vrHintText.transform.SetAsLastSibling();
+        if (_panoramaToggleButton != null)
+            _panoramaToggleButton.transform.SetAsLastSibling();
+        if (_panoramaHintText != null)
+            _panoramaHintText.transform.SetAsLastSibling();
     }
 
     void TryLoadStory()
@@ -419,16 +412,21 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         if (_nextButton != null)
             _nextButton.interactable = index < _pages.Length - 1;
 
-        bool vrActive = (_vrTheater != null && _vrTheater.IsActive)
-            || (_panoramaPlayer != null && _panoramaPlayer.IsActive);
-        if (vrActive)
+        if (_panoramaActive)
         {
-            ExitAllVrModes();
-            EnterVrForCurrentPage();
-            if (_stereoToggleButton != null)
-                _stereoToggleButton.gameObject.SetActive(!_panoramaVrActive);
-            UpdateVrHint();
+            if (CurrentPageHasPanorama())
+            {
+                ApplyPanoramaToPlayer(page);
+                UpdatePanoramaHint();
+            }
+            else
+            {
+                ExitPanoramaMode();
+                ShowTransientHint("本页暂无 360° 全景");
+            }
         }
+
+        RefreshPanoramaButton();
     }
 
     void ApplyPanoramaToPlayer(CompletedStoryStore.CompletedStoryPageFile page)
@@ -448,34 +446,31 @@ public class CompletedStoryViewerRoot : MonoBehaviour
             CompletedStoryStore.GetPagePanoramaPath(_save.saveId, _pages[_index]));
     }
 
-    void ExitAllVrModes()
+    void ExitPanoramaMode()
     {
-        if (_vrTheater != null && _vrTheater.IsActive)
-            _vrTheater.Exit();
         if (_panoramaPlayer != null && _panoramaPlayer.IsActive)
             _panoramaPlayer.Exit();
-        _panoramaVrActive = false;
+        _panoramaActive = false;
+        SetFlatViewVisible(true);
+        RefreshPanoramaButton();
+        UpdatePanoramaHint();
     }
 
-    void EnterVrForCurrentPage()
+    void EnterPanoramaMode()
     {
-        var page = _pages != null && _index < _pages.Length ? _pages[_index] : null;
-        bool hasPanorama = CurrentPageHasPanorama();
+        if (!CurrentPageHasPanorama())
+        {
+            ShowTransientHint("本页暂无 360° 全景");
+            return;
+        }
 
-        if (hasPanorama)
-        {
-            _panoramaVrActive = true;
-            _panoramaPlayer.Enter();
-            ApplyPanoramaToPlayer(page);
-        }
-        else
-        {
-            _panoramaVrActive = false;
-            _vrTheater.Enter();
-            _vrTheater.SetPage(
-                _sprites != null && _index < _sprites.Length ? _sprites[_index] : null,
-                GetPageCaption(page));
-        }
+        var page = _pages != null && _index < _pages.Length ? _pages[_index] : null;
+        _panoramaActive = true;
+        _panoramaPlayer.Enter();
+        ApplyPanoramaToPlayer(page);
+        SetFlatViewVisible(false);
+        RefreshPanoramaButton();
+        UpdatePanoramaHint();
     }
 
     static string GetPageCaption(CompletedStoryStore.CompletedStoryPageFile page)
@@ -487,54 +482,25 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         return page.userVoiceAnswer?.Trim() ?? "";
     }
 
-    void ToggleVrMode()
+    void TogglePanoramaMode()
     {
-        bool anyVrActive = (_vrTheater != null && _vrTheater.IsActive)
-            || (_panoramaPlayer != null && _panoramaPlayer.IsActive);
-
-        if (anyVrActive)
-        {
-            ExitAllVrModes();
-            SetFlatViewVisible(true);
-            if (_stereoToggleButton != null)
-                _stereoToggleButton.gameObject.SetActive(false);
-            if (_vrToggleButton != null)
-            {
-                var label = _vrToggleButton.GetComponentInChildren<Text>();
-                if (label != null)
-                    label.text = "沉浸 VR";
-            }
-        }
+        if (_panoramaActive)
+            ExitPanoramaMode();
         else
-        {
-            EnterVrForCurrentPage();
-            SetFlatViewVisible(false);
-            if (_stereoToggleButton != null)
-                _stereoToggleButton.gameObject.SetActive(!_panoramaVrActive);
-            if (_vrToggleButton != null)
-            {
-                var label = _vrToggleButton.GetComponentInChildren<Text>();
-                if (label != null)
-                    label.text = "退出 VR";
-            }
-        }
-
-        UpdateVrHint();
+            EnterPanoramaMode();
     }
 
-    void ToggleStereoMode()
+    void RefreshPanoramaButton()
     {
-        if (_vrTheater == null || !_vrTheater.IsActive || _panoramaVrActive)
+        if (_panoramaToggleButton == null)
             return;
 
-        _vrTheater.SetStereoEnabled(!_vrTheater.StereoEnabled);
-        UpdateVrHint();
-        if (_stereoToggleButton != null)
-        {
-            var label = _stereoToggleButton.GetComponentInChildren<Text>();
-            if (label != null)
-                label.text = _vrTheater.StereoEnabled ? "单屏" : "立体分屏";
-        }
+        bool hasPanorama = CurrentPageHasPanorama();
+        _panoramaToggleButton.interactable = hasPanorama || _panoramaActive;
+
+        var label = _panoramaToggleButton.GetComponentInChildren<Text>();
+        if (label != null)
+            label.text = _panoramaActive ? PanoramaExitLabel : PanoramaEnterLabel;
     }
 
     void SetFlatViewVisible(bool visible)
@@ -548,29 +514,31 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         RefreshStoryReaderUi();
     }
 
-    void UpdateVrHint()
+    void UpdatePanoramaHint()
     {
-        if (_vrHintText == null)
+        if (_panoramaHintText == null)
             return;
 
-        bool anyVrActive = (_vrTheater != null && _vrTheater.IsActive)
-            || (_panoramaPlayer != null && _panoramaPlayer.IsActive);
-
-        if (!anyVrActive)
+        if (!_panoramaActive)
         {
-            _vrHintText.gameObject.SetActive(false);
+            _panoramaHintText.gameObject.SetActive(false);
             return;
         }
 
-        _vrHintText.gameObject.SetActive(true);
+        _panoramaHintText.gameObject.SetActive(true);
         string lookHint = SystemInfo.supportsGyroscope
             ? "转动设备环视"
             : "按住鼠标拖拽环视";
-        string modeHint = _panoramaVrActive ? " · 360° 全景" : "";
-        string stereoHint = !_panoramaVrActive && _vrTheater != null && _vrTheater.StereoEnabled
-            ? " · 立体分屏已开"
-            : "";
-        _vrHintText.text = $"{lookHint}{modeHint}{stereoHint}";
+        _panoramaHintText.text = $"{lookHint} · 360° 全景";
+    }
+
+    void ShowTransientHint(string message)
+    {
+        if (_panoramaHintText == null || string.IsNullOrWhiteSpace(message))
+            return;
+
+        _panoramaHintText.gameObject.SetActive(true);
+        _panoramaHintText.text = message;
     }
 
     void PrevPage()

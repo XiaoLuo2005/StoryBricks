@@ -40,7 +40,7 @@ public class BrickPortfolioRoot : MonoBehaviour
     public StoryLibraryPageView pageView;
     public StoryLibraryPageView pageViewPrefab;
     public bool allowRuntimeFallbackUi = true;
-    [Tooltip("勾选后运行时自动创建/重排导航按钮；关闭则保留场景里可视化编辑的布局")]
+    [Tooltip("勾选后运行时自动创建/重排导航按钮；关闭则保留场景里已有按钮位置，缺失按钮需在编辑器中添加到场景")]
     public bool applyRuntimeLayout = false;
 
     [Header("场景里摆好的 UI（未用 pageView 时）")]
@@ -387,6 +387,8 @@ public class BrickPortfolioRoot : MonoBehaviour
 
     void WireExistingNavButtons(Canvas canvas)
     {
+        int column = 0;
+
         if (showBackButton)
         {
             string sceneName = portfolioKind switch
@@ -421,6 +423,12 @@ public class BrickPortfolioRoot : MonoBehaviour
                 {
                     StoryFlowBackButtonUi.BindNavigation(back, label, sceneName);
                     back.transform.SetAsLastSibling();
+                    column++;
+                }
+                else
+                {
+                    StoryFlowBackButtonUi.EnsureTopLeft(canvas, "BackButton", label, sceneName, column);
+                    column++;
                 }
             }
         }
@@ -430,13 +438,29 @@ public class BrickPortfolioRoot : MonoBehaviour
             string.IsNullOrWhiteSpace(brickLibrarySceneName))
             return;
 
-        var brickTf = canvas.transform.Find("BrickLibraryButton");
-        if (brickTf == null)
+        var brickBtn = pageView?.brickLibraryButton;
+        if (brickBtn == null)
+        {
+            var brickTf = canvas.transform.Find("BrickLibraryButton");
+            if (brickTf != null)
+                brickBtn = brickTf.GetComponent<Button>();
+        }
+
+        if (brickBtn != null)
+        {
+            StoryFlowBackButtonUi.BindNavigation(brickBtn, brickLibraryButtonLabel, brickLibrarySceneName);
+            return;
+        }
+
+        if (!applyRuntimeLayout)
             return;
 
-        var brickBtn = brickTf.GetComponent<Button>();
-        if (brickBtn != null)
-            StoryFlowBackButtonUi.BindNavigation(brickBtn, brickLibraryButtonLabel, brickLibrarySceneName);
+        StoryFlowBackButtonUi.EnsureTopLeft(
+            canvas,
+            "BrickLibraryButton",
+            brickLibraryButtonLabel,
+            brickLibrarySceneName,
+            column);
     }
 
     void TryCreateStartCreationButton()
@@ -455,60 +479,53 @@ public class BrickPortfolioRoot : MonoBehaviour
             return;
 
         var canvasRt = canvas.GetComponent<RectTransform>();
-        var existing = canvasRt.Find("StartCreationButton");
-        if (existing == null)
+        Button btn = pageView?.startCreationButton;
+        if (btn == null)
         {
-            if (!applyRuntimeLayout)
-                return;
+            var existing = canvasRt.Find("StartCreationButton");
+            if (existing != null)
+                btn = existing.GetComponent<Button>();
         }
-        else if (!applyRuntimeLayout)
+
+        if (btn != null)
         {
-            var existingBtn = existing.GetComponent<Button>();
-            if (existingBtn != null)
-                WireStartCreationButton(existingBtn);
+            WireStartCreationButton(btn);
             return;
         }
 
-        Button btn;
-        if (existing != null)
-        {
-            btn = existing.GetComponent<Button>();
-            if (btn == null)
-                return;
-        }
-        else
-        {
-            var go = new GameObject("StartCreationButton", typeof(RectTransform));
-            go.layer = LayerMask.NameToLayer("UI");
-            var rt = go.GetComponent<RectTransform>();
-            rt.SetParent(canvasRt, false);
-            rt.anchorMin = new Vector2(1f, 0f);
-            rt.anchorMax = new Vector2(1f, 0f);
-            rt.pivot = new Vector2(1f, 0f);
-            rt.sizeDelta = new Vector2(280f, 88f);
-            rt.anchoredPosition = new Vector2(-40f, 40f);
+        if (!applyRuntimeLayout)
+            return;
 
-            var img = go.AddComponent<Image>();
-            img.color = new Color32(52, 168, 83, 255);
-            btn = go.AddComponent<Button>();
-            btn.targetGraphic = img;
+        var go = new GameObject("StartCreationButton", typeof(RectTransform));
+        go.layer = LayerMask.NameToLayer("UI");
+        var rt = go.GetComponent<RectTransform>();
+        rt.SetParent(canvasRt, false);
+        rt.anchorMin = new Vector2(1f, 0f);
+        rt.anchorMax = new Vector2(1f, 0f);
+        rt.pivot = new Vector2(1f, 0f);
+        rt.sizeDelta = new Vector2(280f, 88f);
+        rt.anchoredPosition = new Vector2(-40f, 40f);
 
-            var labelGo = new GameObject("Label", typeof(RectTransform));
-            labelGo.layer = LayerMask.NameToLayer("UI");
-            var labelRt = labelGo.GetComponent<RectTransform>();
-            labelRt.SetParent(rt, false);
-            labelRt.anchorMin = Vector2.zero;
-            labelRt.anchorMax = Vector2.one;
-            labelRt.offsetMin = Vector2.zero;
-            labelRt.offsetMax = Vector2.zero;
-            var text = labelGo.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 30;
-            text.fontStyle = FontStyle.Bold;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.white;
-            text.text = startCreationButtonLabel;
-        }
+        var img = go.AddComponent<Image>();
+        img.color = new Color32(52, 168, 83, 255);
+        btn = go.AddComponent<Button>();
+        btn.targetGraphic = img;
+
+        var labelGo = new GameObject("Label", typeof(RectTransform));
+        labelGo.layer = LayerMask.NameToLayer("UI");
+        var labelRt = labelGo.GetComponent<RectTransform>();
+        labelRt.SetParent(rt, false);
+        labelRt.anchorMin = Vector2.zero;
+        labelRt.anchorMax = Vector2.one;
+        labelRt.offsetMin = Vector2.zero;
+        labelRt.offsetMax = Vector2.zero;
+        var text = labelGo.AddComponent<Text>();
+        text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
+        text.fontSize = 30;
+        text.fontStyle = FontStyle.Bold;
+        text.alignment = TextAnchor.MiddleCenter;
+        text.color = Color.white;
+        text.text = startCreationButtonLabel;
 
         WireStartCreationButton(btn);
     }
@@ -543,61 +560,24 @@ public class BrickPortfolioRoot : MonoBehaviour
             return;
 
         var canvasRt = canvas.GetComponent<RectTransform>();
-        var existing = canvasRt.Find("MyStoriesButton");
-        if (existing == null)
+        Button btn = pageView?.myStoriesButton;
+        if (btn == null)
         {
-            if (!applyRuntimeLayout)
-                return;
+            var existing = canvasRt.Find("MyStoriesButton");
+            if (existing != null)
+                btn = existing.GetComponent<Button>();
         }
-        else if (!applyRuntimeLayout)
+
+        if (btn != null)
         {
-            var existingBtn = existing.GetComponent<Button>();
-            if (existingBtn != null)
-                WireMyStoriesButton(existingBtn);
+            WireMyStoriesButton(btn);
             return;
         }
 
-        Button btn;
-        if (existing != null)
-        {
-            btn = existing.GetComponent<Button>();
-            if (btn == null)
-                return;
-        }
-        else
-        {
-            var go = new GameObject("MyStoriesButton", typeof(RectTransform));
-            go.layer = LayerMask.NameToLayer("UI");
-            var rt = go.GetComponent<RectTransform>();
-            rt.SetParent(canvasRt, false);
-            rt.anchorMin = new Vector2(1f, 0f);
-            rt.anchorMax = new Vector2(1f, 0f);
-            rt.pivot = new Vector2(1f, 0f);
-            rt.sizeDelta = new Vector2(280f, 88f);
-            rt.anchoredPosition = new Vector2(-40f, 40f);
+        if (!applyRuntimeLayout)
+            return;
 
-            var img = go.AddComponent<Image>();
-            img.color = new Color32(142, 68, 173, 255);
-            btn = go.AddComponent<Button>();
-            btn.targetGraphic = img;
-
-            var labelGo = new GameObject("Label", typeof(RectTransform));
-            labelGo.layer = LayerMask.NameToLayer("UI");
-            var labelRt = labelGo.GetComponent<RectTransform>();
-            labelRt.SetParent(rt, false);
-            labelRt.anchorMin = Vector2.zero;
-            labelRt.anchorMax = Vector2.one;
-            labelRt.offsetMin = Vector2.zero;
-            labelRt.offsetMax = Vector2.zero;
-            var text = labelGo.AddComponent<Text>();
-            text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-            text.fontSize = 30;
-            text.fontStyle = FontStyle.Bold;
-            text.alignment = TextAnchor.MiddleCenter;
-            text.color = Color.white;
-            text.text = myStoriesButtonLabel;
-        }
-
+        btn = StoryLibraryUiBuilder.CreateMyStoriesButton(canvasRt, myStoriesButtonLabel);
         WireMyStoriesButton(btn);
     }
 
@@ -606,12 +586,7 @@ public class BrickPortfolioRoot : MonoBehaviour
         if (btn == null)
             return;
 
-        var labelText = btn.GetComponentInChildren<Text>();
-        if (labelText != null)
-            labelText.text = myStoriesButtonLabel;
-
-        btn.onClick.RemoveAllListeners();
-        btn.onClick.AddListener(() => SceneManager.LoadScene(myStoriesSceneName.Trim()));
+        StoryFlowBackButtonUi.BindNavigation(btn, myStoriesButtonLabel, myStoriesSceneName);
         btn.transform.SetAsLastSibling();
     }
 

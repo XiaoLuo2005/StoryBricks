@@ -21,9 +21,11 @@ public class CompletedStoryViewerPageView : MonoBehaviour
     public Button storyToggleButton;
     [Tooltip("叙述面板内的「收起」按钮，可选")]
     public Button storyCloseButton;
-    public Button vrToggleButton;
-    public Button stereoToggleButton;
-    public Text vrHintText;
+    public Button panoramaToggleButton;
+    public Text panoramaHintText;
+    [HideInInspector] public Button vrToggleButton;
+    [HideInInspector] public Button stereoToggleButton;
+    [HideInInspector] public Text vrHintText;
 
     public bool IsComplete =>
         canvas != null &&
@@ -141,12 +143,21 @@ public class CompletedStoryViewerPageView : MonoBehaviour
                 storyCloseButton = close.GetComponent<Button>();
         }
 
-        if (vrToggleButton == null)
+        if (panoramaToggleButton == null)
         {
-            var vr = canvas.transform.Find("VrToggleButton");
-            if (vr != null)
-                vrToggleButton = vr.GetComponent<Button>();
+            var pano = canvas.transform.Find("PanoramaToggleButton");
+            if (pano != null)
+                panoramaToggleButton = pano.GetComponent<Button>();
         }
+
+        if (panoramaToggleButton == null)
+        {
+            var legacy = canvas.transform.Find("VrToggleButton");
+            if (legacy != null)
+                panoramaToggleButton = legacy.GetComponent<Button>();
+        }
+
+        vrToggleButton = panoramaToggleButton;
 
         if (stereoToggleButton == null)
         {
@@ -155,12 +166,21 @@ public class CompletedStoryViewerPageView : MonoBehaviour
                 stereoToggleButton = stereo.GetComponent<Button>();
         }
 
-        if (vrHintText == null)
+        if (panoramaHintText == null)
         {
-            var hint = canvas.transform.Find("VrHint");
+            var hint = canvas.transform.Find("PanoramaHint");
             if (hint != null)
-                vrHintText = hint.GetComponent<Text>();
+                panoramaHintText = hint.GetComponent<Text>();
         }
+
+        if (panoramaHintText == null)
+        {
+            var legacyHint = canvas.transform.Find("VrHint");
+            if (legacyHint != null)
+                panoramaHintText = legacyHint.GetComponent<Text>();
+        }
+
+        vrHintText = panoramaHintText;
 
         return IsComplete;
     }

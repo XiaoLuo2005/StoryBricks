@@ -41,6 +41,8 @@ public class StoryCreationArDirector : MonoBehaviour
     const float MoveReactPixels = 72f;
     const float MoveReactCooldownSeconds = 8f;
 
+    [SerializeField] bool showRosterPanel;
+
     /// <summary>新识别到一名角色时（仅首次）。</summary>
     public event Action<string> CharacterArrived;
 
@@ -109,7 +111,7 @@ public class StoryCreationArDirector : MonoBehaviour
     {
         _active = active;
         if (_rosterPanel != null)
-            _rosterPanel.gameObject.SetActive(active);
+            _rosterPanel.gameObject.SetActive(showRosterPanel && active);
         if (!active)
         {
             ClearStickers(_miniStickers);
@@ -544,6 +546,8 @@ public class StoryCreationArDirector : MonoBehaviour
         _rosterHint.fontSize = 18;
         _rosterHint.color = new Color32(70, 76, 90, 255);
         _rosterHint.horizontalOverflow = HorizontalWrapMode.Wrap;
+
+        _rosterPanel.gameObject.SetActive(false);
     }
 
     void RebuildRosterRows()

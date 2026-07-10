@@ -18,6 +18,12 @@ public class StoryLibraryPageView : MonoBehaviour
     public RectTransform cardListContent;
     public GameObject emptyHint;
     public Button backButton;
+    [Tooltip("StoryWorks：左上角「积木库」")]
+    public Button brickLibraryButton;
+    [Tooltip("StoryWorks：右下角「开始创作故事」")]
+    public Button startCreationButton;
+    [Tooltip("StoryLibrary：右下角「我的故事」")]
+    public Button myStoriesButton;
 
     public bool IsComplete =>
         canvas != null &&
@@ -53,6 +59,27 @@ public class StoryLibraryPageView : MonoBehaviour
             var back = canvas.transform.Find("BackButton");
             if (back != null)
                 backButton = back.GetComponent<Button>();
+        }
+
+        if (brickLibraryButton == null && canvas != null)
+        {
+            var brick = canvas.transform.Find("BrickLibraryButton");
+            if (brick != null)
+                brickLibraryButton = brick.GetComponent<Button>();
+        }
+
+        if (startCreationButton == null && canvas != null)
+        {
+            var start = canvas.transform.Find("StartCreationButton");
+            if (start != null)
+                startCreationButton = start.GetComponent<Button>();
+        }
+
+        if (myStoriesButton == null && canvas != null)
+        {
+            var mine = canvas.transform.Find("MyStoriesButton");
+            if (mine != null)
+                myStoriesButton = mine.GetComponent<Button>();
         }
 
         return IsComplete;

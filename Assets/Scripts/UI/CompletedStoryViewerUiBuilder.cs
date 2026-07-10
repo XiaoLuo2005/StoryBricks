@@ -50,10 +50,10 @@ public static class CompletedStoryViewerUiBuilder
                 ButtonSpacing);
 
         view.exitButton = StoryLibraryUiBuilder.CreateBackButton(canvas.transform);
-        view.vrToggleButton = CreateTopBarButton(canvas.transform, "VrToggleButton", "沉浸 VR", 0);
-        view.stereoToggleButton = CreateTopBarButton(canvas.transform, "StereoToggleButton", "立体分屏", 1);
-        view.stereoToggleButton.gameObject.SetActive(false);
-        view.vrHintText = CreateVrHint(canvas.transform);
+        view.panoramaToggleButton = CreateTopBarButton(canvas.transform, "PanoramaToggleButton", "360° 全景", 0);
+        view.vrToggleButton = view.panoramaToggleButton;
+        view.panoramaHintText = CreatePanoramaHint(canvas.transform);
+        view.vrHintText = view.panoramaHintText;
 
         return view;
     }
@@ -98,9 +98,9 @@ public static class CompletedStoryViewerUiBuilder
         return button;
     }
 
-    static Text CreateVrHint(Transform parent)
+    static Text CreatePanoramaHint(Transform parent)
     {
-        var go = new GameObject("VrHint", typeof(RectTransform));
+        var go = new GameObject("PanoramaHint", typeof(RectTransform));
         go.layer = LayerMask.NameToLayer("UI");
         var rt = go.GetComponent<RectTransform>();
         rt.SetParent(parent, false);
