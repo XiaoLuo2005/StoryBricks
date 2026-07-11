@@ -192,7 +192,10 @@ public class CompletedStoryViewerPageView : MonoBehaviour
             return;
 
         if (storyToggleButton != null)
+        {
             CompletedStoryRuntimeUi.ApplyStoryToggleLayout(storyToggleButton.GetComponent<RectTransform>());
+            CompletedStoryRuntimeUi.ApplyStoryToggleButtonStyle(storyToggleButton);
+        }
         else
             storyToggleButton = CompletedStoryRuntimeUi.CreateStoryToggleButton(canvas.transform);
 

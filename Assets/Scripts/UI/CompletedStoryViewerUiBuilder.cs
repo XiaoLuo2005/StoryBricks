@@ -58,7 +58,7 @@ public static class CompletedStoryViewerUiBuilder
         return view;
     }
 
-    static Button CreateTopBarButton(Transform parent, string name, string label, int columnIndex)
+    public static Button CreateTopBarButton(Transform parent, string name, string label, int columnIndex)
     {
         const float width = 200f;
         const float height = 72f;
@@ -77,6 +77,7 @@ public static class CompletedStoryViewerUiBuilder
 
         var img = go.AddComponent<Image>();
         img.color = new Color32(235, 238, 245, 255);
+        TutorialUiArt.ApplyButtonBackground(img);
         var button = go.AddComponent<Button>();
         button.targetGraphic = img;
 
@@ -93,12 +94,12 @@ public static class CompletedStoryViewerUiBuilder
         text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         text.fontSize = 26;
         text.alignment = TextAnchor.MiddleCenter;
-        text.color = new Color32(40, 44, 52, 255);
+        text.color = TutorialUiArt.TitleBrown;
         text.text = label;
         return button;
     }
 
-    static Text CreatePanoramaHint(Transform parent)
+    public static Text CreatePanoramaHint(Transform parent)
     {
         var go = new GameObject("PanoramaHint", typeof(RectTransform));
         go.layer = LayerMask.NameToLayer("UI");

@@ -150,8 +150,9 @@ public static class StoryCreationPageUiBuilder
             root,
             "StoryToggleButton",
             "故事阅读",
-            new Vector2(168f, 64f),
-            false);
+            new Vector2(188f, 72f),
+            true);
+        CompletedStoryRuntimeUi.ApplyStoryToggleButtonStyle(view.storyToggleButton);
         var rt = view.storyToggleButton.GetComponent<RectTransform>();
         rt.anchorMin = new Vector2(0f, 0f);
         rt.anchorMax = new Vector2(0f, 0f);

@@ -91,12 +91,12 @@ async function dashFetch(url, { apiKey, method = "POST", body, asyncMode = false
   return json;
 }
 
-async function syncImageEdit({ apiKey, model, prompt, referenceImages, size, n }) {
+async function syncImageEdit({ apiKey, model, prompt, referenceImages, size, n, promptExtend = true }) {
   const payload = {
     model,
     input: { messages: buildMessages(prompt, referenceImages) },
     parameters: {
-      prompt_extend: true,
+      prompt_extend: promptExtend !== false,
       watermark: false,
       n,
       enable_interleave: false,

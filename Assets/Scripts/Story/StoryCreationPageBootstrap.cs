@@ -327,6 +327,7 @@ public class StoryCreationPageBootstrap : MonoBehaviour
         ApplyPageCaptionPanelLayout();
         if (_storyToggleButton != null)
         {
+            CompletedStoryRuntimeUi.ApplyStoryToggleButtonStyle(_storyToggleButton);
             _storyToggleButton.onClick.RemoveAllListeners();
             _storyToggleButton.onClick.AddListener(ToggleStoryPanel);
         }

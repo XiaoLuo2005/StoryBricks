@@ -1,11 +1,12 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using UnityEngine;
 using UnityEngine.Video;
 
 /// <summary>
-/// 手机式 360 全景播放：视频或 equirectangular 静态图贴在内翻球面上，陀螺仪 / 鼠标拖拽环视。
+/// 手机式 360 全景播放：equirectangular 静态图 / 视频贴在内翻球面上，陀螺仪或鼠标拖拽环视。
 /// </summary>
 [DisallowMultipleComponent]
 public class GyroPanorama360Player : MonoBehaviour
@@ -13,6 +14,9 @@ public class GyroPanorama360Player : MonoBehaviour
     const float SphereRadius = 48f;
     const float MaxPitch = 85f;
     const int VideoRtHeight = 2048;
+    const float PanoramaCameraDepth = 80f;
+    /// <summary>全景球专用层，避免场景里 Background 装饰板挡住环视。</summary>
+    const int PanoramaOnlyLayer = 30;
 
     GameObject _worldRoot;
     Transform _head;
@@ -20,6 +24,7 @@ public class GyroPanorama360Player : MonoBehaviour
     Material _sphereMaterial;
     RenderTexture _videoRt;
     VideoPlayer _videoPlayer;
+    GameObject _sphereGo;
 
     bool _active;
     bool _gyroReady;
@@ -28,6 +33,8 @@ public class GyroPanorama360Player : MonoBehaviour
     Coroutine _prepareRoutine;
     int _sleepTimeoutBackup = SleepTimeout.SystemSetting;
     Texture2D _ownedStaticTexture;
+    readonly List<Camera> _disabledCameras = new List<Camera>(4);
+    readonly List<GameObject> _hiddenDecor = new List<GameObject>(8);
 
     public bool IsActive => _active;
 
@@ -40,6 +47,11 @@ public class GyroPanorama360Player : MonoBehaviour
 
         BuildWorldIfNeeded();
         _worldRoot.SetActive(true);
+        if (_camera != null)
+            _camera.enabled = true;
+
+        SuspendOtherCameras();
+        HideSceneDecor();
         _active = true;
         ResetLook();
         TryEnableGyro();
@@ -56,6 +68,11 @@ public class GyroPanorama360Player : MonoBehaviour
         StopPlaybackInternal();
         DisableGyro();
         Screen.sleepTimeout = _sleepTimeoutBackup;
+        RestoreOtherCameras();
+        RestoreSceneDecor();
+
+        if (_camera != null)
+            _camera.enabled = false;
         if (_worldRoot != null)
             _worldRoot.SetActive(false);
     }
@@ -63,9 +80,6 @@ public class GyroPanorama360Player : MonoBehaviour
     /// <summary>加载本页 360 资源；videoPath / imagePath 为绝对路径，可只提供其一。</summary>
     public void SetPageSource(string videoPath, string imagePath)
     {
-        if (!_active && _worldRoot == null)
-            return;
-
         BuildWorldIfNeeded();
         StopPlaybackInternal();
 
@@ -89,6 +103,37 @@ public class GyroPanorama360Player : MonoBehaviour
         OnPlaybackStateChanged?.Invoke(false, "未找到本页 360 资源");
     }
 
+    /// <summary>没有专用全景图时，用平面页生成 2:1 种子环视图（仅演示，非 AI 全景）。</summary>
+    public void SetFallbackFromFlatTexture(Texture2D flatPage)
+    {
+        BuildWorldIfNeeded();
+        StopPlaybackInternal();
+
+        if (flatPage == null)
+        {
+            OnPlaybackStateChanged?.Invoke(false, "本页没有可展示的画面");
+            return;
+        }
+
+        var owned = new System.Collections.Generic.List<Texture2D>();
+        var pano = StoryImageUtil.BuildEquirectangularCover(flatPage, 1024, 512, owned);
+        // 只保留最终种子图，中间可读拷贝可销毁
+        for (int i = 0; i < owned.Count; i++)
+        {
+            if (owned[i] != null && owned[i] != pano)
+                Destroy(owned[i]);
+        }
+
+        if (pano == null)
+        {
+            OnPlaybackStateChanged?.Invoke(false, "无法生成本页临时全景");
+            return;
+        }
+
+        ApplyStaticPanorama(pano);
+        OnPlaybackStateChanged?.Invoke(true, null);
+    }
+
     void Update()
     {
         if (!_active || _head == null)
@@ -101,12 +146,15 @@ public class GyroPanorama360Player : MonoBehaviour
 
     void OnDestroy()
     {
+        Exit();
         StopPlaybackInternal();
         DisableGyro();
         ReleaseOwnedStaticTexture();
         if (_sphereMaterial != null)
             Destroy(_sphereMaterial);
         ReleaseVideoRt();
+        if (_worldRoot != null)
+            Destroy(_worldRoot);
     }
 
     void BuildWorldIfNeeded()
@@ -115,25 +163,32 @@ public class GyroPanorama360Player : MonoBehaviour
             return;
 
         _worldRoot = new GameObject("Panorama360World");
-        _worldRoot.transform.SetParent(null, false);
+        DontDestroyOnLoad(_worldRoot);
 
         var sphere = GameObject.CreatePrimitive(PrimitiveType.Sphere);
         sphere.name = "PanoramaSphere";
+        sphere.layer = PanoramaOnlyLayer;
         sphere.transform.SetParent(_worldRoot.transform, false);
         sphere.transform.localPosition = Vector3.zero;
-        sphere.transform.localScale = new Vector3(-SphereRadius, SphereRadius, SphereRadius);
+        sphere.transform.localScale = Vector3.one * SphereRadius;
+        _sphereGo = sphere;
         var col = sphere.GetComponent<Collider>();
         if (col != null)
             Destroy(col);
 
-        _sphereMaterial = new Material(Shader.Find("Unlit/Texture"));
+        var shader = Shader.Find("StoryBricks/EquirectangularInside")
+                     ?? Shader.Find("Unlit/Texture")
+                     ?? Shader.Find("Sprites/Default");
+        _sphereMaterial = new Material(shader);
         sphere.GetComponent<MeshRenderer>().sharedMaterial = _sphereMaterial;
 
         _head = new GameObject("PanoramaHead").transform;
         _head.SetParent(_worldRoot.transform, false);
         _head.localPosition = Vector3.zero;
+        SetLayerRecursively(_head.gameObject, PanoramaOnlyLayer);
 
         var camGo = new GameObject("PanoramaCamera");
+        camGo.layer = PanoramaOnlyLayer;
         camGo.transform.SetParent(_head, false);
         camGo.transform.localPosition = Vector3.zero;
         camGo.transform.localRotation = Quaternion.identity;
@@ -143,9 +198,10 @@ public class GyroPanorama360Player : MonoBehaviour
         _camera.fieldOfView = 90f;
         _camera.nearClipPlane = 0.01f;
         _camera.farClipPlane = SphereRadius * 2f;
-        int uiLayer = LayerMask.NameToLayer("UI");
-        _camera.cullingMask = uiLayer >= 0 ? ~(1 << uiLayer) : ~0;
-        _camera.depth = -10;
+        // 只看全景球，不看场景里的 Background 装饰板
+        _camera.cullingMask = 1 << PanoramaOnlyLayer;
+        _camera.depth = PanoramaCameraDepth;
+        _camera.enabled = false;
 
         _videoPlayer = gameObject.AddComponent<VideoPlayer>();
         _videoPlayer.playOnAwake = false;
@@ -155,6 +211,76 @@ public class GyroPanorama360Player : MonoBehaviour
         _videoPlayer.audioOutputMode = VideoAudioOutputMode.Direct;
 
         _worldRoot.SetActive(false);
+    }
+
+    void SuspendOtherCameras()
+    {
+        RestoreOtherCameras();
+        var cameras = FindObjectsOfType<Camera>();
+        for (int i = 0; i < cameras.Length; i++)
+        {
+            var cam = cameras[i];
+            if (cam == null || cam == _camera || !cam.enabled)
+                continue;
+            // Overlay UI 不依赖这些相机；关掉以免清屏盖住全景
+            cam.enabled = false;
+            _disabledCameras.Add(cam);
+        }
+    }
+
+    void RestoreOtherCameras()
+    {
+        for (int i = 0; i < _disabledCameras.Count; i++)
+        {
+            if (_disabledCameras[i] != null)
+                _disabledCameras[i].enabled = true;
+        }
+        _disabledCameras.Clear();
+    }
+
+    void HideSceneDecor()
+    {
+        RestoreSceneDecor();
+        // 阅读场景里的 StoryLibraryDecor/Background 是一张大图板，会挡在全景中间
+        var renders = FindObjectsOfType<SpriteRenderer>();
+        for (int i = 0; i < renders.Length; i++)
+        {
+            var sr = renders[i];
+            if (sr == null || !sr.enabled || !sr.gameObject.activeInHierarchy)
+                continue;
+            if (_worldRoot != null && sr.transform.IsChildOf(_worldRoot.transform))
+                continue;
+            sr.gameObject.SetActive(false);
+            _hiddenDecor.Add(sr.gameObject);
+        }
+
+        var decorRoot = GameObject.Find("StoryLibraryDecor");
+        if (decorRoot != null && decorRoot.activeSelf)
+        {
+            decorRoot.SetActive(false);
+            if (!_hiddenDecor.Contains(decorRoot))
+                _hiddenDecor.Add(decorRoot);
+        }
+    }
+
+    void RestoreSceneDecor()
+    {
+        for (int i = 0; i < _hiddenDecor.Count; i++)
+        {
+            if (_hiddenDecor[i] != null)
+                _hiddenDecor[i].SetActive(true);
+        }
+        _hiddenDecor.Clear();
+    }
+
+    static void SetLayerRecursively(GameObject go, int layer)
+    {
+        if (go == null)
+            return;
+        go.layer = layer;
+        var t = go.transform;
+        for (int i = 0; i < t.childCount; i++)
+            SetLayerRecursively(t.GetChild(i).gameObject, layer);
     }
 
     void StartPrepareVideo(string absolutePath)
@@ -186,7 +312,8 @@ public class GyroPanorama360Player : MonoBehaviour
     {
         ReleaseOwnedStaticTexture();
         _ownedStaticTexture = texture;
-        _sphereMaterial.mainTexture = texture;
+        if (_sphereMaterial != null)
+            _sphereMaterial.mainTexture = texture;
     }
 
     void ReleaseOwnedStaticTexture()
@@ -252,6 +379,7 @@ public class GyroPanorama360Player : MonoBehaviour
             }
 
             tex.wrapMode = TextureWrapMode.Repeat;
+            tex.filterMode = FilterMode.Bilinear;
             return tex;
         }
         catch (Exception ex)
@@ -307,25 +435,24 @@ public class GyroPanorama360Player : MonoBehaviour
 
     void ApplyLookInput()
     {
-        Quaternion look;
         if (_gyroReady)
         {
             var gyroRot = GyroToUnity(Input.gyro.attitude);
-            look = Quaternion.Inverse(_gyroBase) * gyroRot;
-        }
-        else if (Input.GetMouseButton(0))
-        {
-            _dragLook.x += Input.GetAxis("Mouse X") * 1.8f;
-            _dragLook.y -= Input.GetAxis("Mouse Y") * 1.8f;
-            _dragLook.y = Mathf.Clamp(_dragLook.y, -MaxPitch, MaxPitch);
-            look = Quaternion.Euler(_dragLook.y, _dragLook.x, 0f);
-        }
-        else
-        {
-            look = Quaternion.identity;
+            _head.localRotation = Quaternion.Inverse(_gyroBase) * gyroRot;
+            return;
         }
 
-        _head.localRotation = look;
+        // PC：按住左键拖拽；点在 UI 上时不转视角；松开后保持视角
+        bool pointerOnUi = UnityEngine.EventSystems.EventSystem.current != null &&
+                           UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject();
+        if (Input.GetMouseButton(0) && !pointerOnUi)
+        {
+            _dragLook.x += Input.GetAxis("Mouse X") * 2.2f;
+            _dragLook.y -= Input.GetAxis("Mouse Y") * 2.2f;
+            _dragLook.y = Mathf.Clamp(_dragLook.y, -MaxPitch, MaxPitch);
+        }
+
+        _head.localRotation = Quaternion.Euler(_dragLook.y, _dragLook.x, 0f);
     }
 
     static Quaternion GyroToUnity(Quaternion q) =>

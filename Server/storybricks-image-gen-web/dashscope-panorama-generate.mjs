@@ -2,6 +2,8 @@
  * 360 全景图（equirectangular 2:1）：
  * - 有 source_image / reference_images → 图生图（把绘本页扩展成环视全景）
  * - 无参考图 → 文生图
+ *
+ * 客户端应先把平面页铺到 2:1 种子画布中央再上传，避免模型整幅重画成另一场景。
  */
 
 import { asyncTextToImage, getApiKey, syncImageEdit } from "./dashscope-generate.mjs";
@@ -13,14 +15,19 @@ const PANORAMA_MIN_PIXELS = 589_824;
 const PANORAMA_MAX_PIXELS = 1_638_400;
 
 const PANORAMA_TEXT_PREFIX =
-  "360 degree equirectangular panorama, seamless wrap-around, immersive environment, " +
-  "no black borders, no text, no watermark, 2:1 aspect ratio, ";
+  "Create a true 360 degree equirectangular panorama (2:1 aspect). " +
+  "Straight horizon near the vertical middle, seamless left-right wrap, " +
+  "no fisheye, no circular race track from above, no black borders, no text, no watermark. Scene: ";
 
 const PANORAMA_IMG2IMG_PREFIX =
-  "将这张儿童绘本插画扩展为无缝360度等距圆柱全景图（equirectangular 2:1）。" +
-  "保持原有角色、画风、色彩与构图中心内容一致，向四周自然延伸天空、地面与环境；" +
-  "角色必须保留且清晰可见，不要删除任何角色；无黑边、无文字、无水印；" +
-  "禁止空白对话框、对白气泡、漫画台词框或任何留白文字区域。";
+  "这是一张已经排版好的 equirectangular 2:1 全景种子图：中央是必须保留的儿童绘本原画。" +
+  "任务：只向外扩展天空、地面与左右环境，生成真正的 360° 等距圆柱全景（equirectangular）。" +
+  "硬性要求：" +
+  "1) 中央主体（角色、道具、大树、路径、画风、色彩）必须与参考图一致，禁止换成另一幅故事场景；" +
+  "2) 地平线接近画面水平中线且基本平直；" +
+  "3) 左右边缘必须无缝衔接，可环视一周；" +
+  "4) 禁止鱼眼、俯视圆形跑道、把角色改成对撞赛跑、黑边、文字、水印、对话框。" +
+  "只做环境扩展，不要重绘中央。";
 
 function parseSizePair(size) {
   const m = String(size || "")
@@ -77,7 +84,7 @@ export async function handleGeneratePanorama(body) {
   const size = normalizePanoramaSize(String(body?.size || PANORAMA_SIZE).trim() || PANORAMA_SIZE);
 
   const fullPrompt = hasSource
-    ? `${PANORAMA_IMG2IMG_PREFIX}${scene ? ` 场景补充：${scene}` : ""}`
+    ? `${PANORAMA_IMG2IMG_PREFIX}${scene ? ` 场景补充（仅描述环境，勿改角色）：${scene}` : ""}`
     : `${PANORAMA_TEXT_PREFIX}${scene}`;
 
   try {
@@ -89,6 +96,8 @@ export async function handleGeneratePanorama(body) {
           referenceImages: sourceImages,
           size,
           n: 1,
+          // 关闭扩写，避免模型把「大树休息」改写成另一幅赛跑图
+          promptExtend: false,
         })
       : await asyncTextToImage({
           apiKey,

@@ -274,12 +274,22 @@ public class LocalImageGenClient : MonoBehaviour
         string sourceDataUrl;
         try
         {
-            Texture2D readable = EnsureReadable(sourcePageTexture, tempTextures);
-            Texture2D upload = StoryImageUtil.DownscaleIfNeeded(
-                readable,
-                maxPanoramaSourceUploadEdge > 0 ? maxPanoramaSourceUploadEdge : 768,
-                tempTextures);
-            byte[] png = upload.EncodeToPNG();
+            // 先把平面页铺进 2:1 种子画布，再让模型做边缘扩展，避免整幅重画成另一场景
+            int seedH = 512;
+            int seedW = seedH * 2;
+            if (maxPanoramaSourceUploadEdge > 0)
+            {
+                seedW = Mathf.Min(seedW, maxPanoramaSourceUploadEdge * 2);
+                seedH = Mathf.Max(256, seedW / 2);
+                seedW = seedH * 2;
+            }
+
+            Texture2D seed = StoryImageUtil.BuildEquirectangularSeed(
+                sourcePageTexture, seedW, seedH, tempTextures);
+            if (seed == null)
+                throw new InvalidOperationException("BuildEquirectangularSeed failed");
+
+            byte[] png = seed.EncodeToPNG();
             if (png == null || png.Length == 0)
                 throw new InvalidOperationException("EncodeToPNG failed for panorama source");
             sourceDataUrl = "data:image/png;base64," + Convert.ToBase64String(png);
@@ -292,7 +302,7 @@ public class LocalImageGenClient : MonoBehaviour
         }
 
         string json = BuildPanoramaRequestJson(promptToSend, sourceDataUrl);
-        Debug.Log($"[Client] 全景图生图请求体约 {json.Length / 1024} KB");
+        Debug.Log($"[Client] 全景图生图请求体约 {json.Length / 1024} KB（2:1 种子图）");
 
         var req = new UnityWebRequest(ResolvePanoramaServerUrl(), UnityWebRequest.kHttpVerbPOST);
         activeWebRequest = req;

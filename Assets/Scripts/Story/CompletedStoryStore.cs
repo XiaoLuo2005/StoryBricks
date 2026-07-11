@@ -240,11 +240,101 @@ public static class CompletedStoryStore
 
     public static string GetPagePanoramaPath(string saveId, CompletedStoryPageFile page)
     {
-        if (page == null || string.IsNullOrWhiteSpace(page.panoramaImageFile))
+        if (page == null || string.IsNullOrWhiteSpace(saveId))
             return null;
 
-        string path = Path.Combine(GetSaveDirectory(saveId), page.panoramaImageFile);
-        return File.Exists(path) ? path : null;
+        string dir = GetSaveDirectory(saveId);
+        if (string.IsNullOrWhiteSpace(dir) || !Directory.Exists(dir))
+            return null;
+
+        // 1) story.json 显式字段
+        if (!string.IsNullOrWhiteSpace(page.panoramaImageFile))
+        {
+            string explicitPath = Path.Combine(dir, page.panoramaImageFile.Trim());
+            if (File.Exists(explicitPath))
+                return explicitPath;
+        }
+
+        // 2) 与平面页同名约定：page_00.png → page_00_panorama / page_00_pano
+        if (!string.IsNullOrWhiteSpace(page.imageFile))
+        {
+            string stem = Path.GetFileNameWithoutExtension(page.imageFile.Trim());
+            string resolved = FirstExisting(
+                Path.Combine(dir, stem + "_panorama.png"),
+                Path.Combine(dir, stem + "_panorama.jpg"),
+                Path.Combine(dir, stem + "_panorama.jpeg"),
+                Path.Combine(dir, stem + "_pano.png"),
+                Path.Combine(dir, stem + "_pano.jpg"),
+                Path.Combine(dir, stem + "_pano.jpeg"));
+            if (resolved != null)
+                return resolved;
+        }
+
+        // 3) 按 pageId 命名
+        if (!string.IsNullOrWhiteSpace(page.pageId))
+        {
+            string id = page.pageId.Trim();
+            string resolved = FirstExisting(
+                Path.Combine(dir, id + ".png"),
+                Path.Combine(dir, id + ".jpg"),
+                Path.Combine(dir, id + "_panorama.png"),
+                Path.Combine(dir, id + "_panorama.jpg"),
+                Path.Combine(dir, id + "_pano.png"),
+                Path.Combine(dir, id + "_pano.jpg"));
+            if (resolved != null)
+                return resolved;
+        }
+
+        // 4) StreamingAssets 演示资源
+        string streaming = ResolveStreamingPanorama(saveId, page);
+        return streaming;
+    }
+
+    static string FirstExisting(params string[] paths)
+    {
+        if (paths == null)
+            return null;
+        for (int i = 0; i < paths.Length; i++)
+        {
+            if (!string.IsNullOrWhiteSpace(paths[i]) && File.Exists(paths[i]))
+                return paths[i];
+        }
+        return null;
+    }
+
+    static string ResolveStreamingPanorama(string saveId, CompletedStoryPageFile page)
+    {
+        try
+        {
+            string root = Path.Combine(Application.streamingAssetsPath, "StoryPanorama360");
+            if (!Directory.Exists(root))
+                return null;
+
+            var candidates = new List<string>();
+            if (!string.IsNullOrWhiteSpace(page?.pageId))
+            {
+                candidates.Add(Path.Combine(root, page.pageId.Trim() + ".jpg"));
+                candidates.Add(Path.Combine(root, page.pageId.Trim() + ".png"));
+            }
+
+            // CompletedStories/<saveId> 里 storyId 不在 page 上；用 save 目录旁的约定由调用方处理。
+            // 这里再扫一层：StoryPanorama360/<任意>/<pageId>
+            if (!string.IsNullOrWhiteSpace(page?.pageId))
+            {
+                string id = page.pageId.Trim();
+                foreach (var sub in Directory.GetDirectories(root))
+                {
+                    candidates.Add(Path.Combine(sub, id + ".jpg"));
+                    candidates.Add(Path.Combine(sub, id + ".png"));
+                }
+            }
+
+            return FirstExisting(candidates.ToArray());
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public static string GetPageRecordingPath(string saveId, CompletedStoryPageFile page)

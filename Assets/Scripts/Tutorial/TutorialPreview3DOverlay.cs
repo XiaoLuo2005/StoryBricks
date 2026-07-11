@@ -87,7 +87,7 @@ public class TutorialPreview3DOverlay : MonoBehaviour
         // RenderTexture 与 UI 纹理 V 轴相反，不翻转常会上下颠倒
         raw.uvRect = new Rect(0f, 1f, 1f, -1f);
 
-        var closeBtn = CreateTextButton(holderRt, "CloseButton", "关闭", new Vector2(200f, 64f));
+        var closeBtn = CreateTextButton(holderRt, "CloseButton", "关闭", new Vector2(200f, 72f));
         var closeRt = closeBtn.GetComponent<RectTransform>();
         closeRt.anchorMin = new Vector2(0.5f, 0f);
         closeRt.anchorMax = new Vector2(0.5f, 0f);
@@ -255,9 +255,17 @@ public class TutorialPreview3DOverlay : MonoBehaviour
         rt.sizeDelta = size;
 
         var img = go.AddComponent<Image>();
-        img.color = new Color32(235, 238, 245, 255);
+        TutorialUiArt.ApplyButtonBackground(img);
         var btn = go.AddComponent<Button>();
         btn.targetGraphic = img;
+
+        var colors = btn.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1f, 0.98f, 0.94f, 1f);
+        colors.pressedColor = new Color(0.92f, 0.88f, 0.8f, 1f);
+        colors.selectedColor = Color.white;
+        colors.disabledColor = new Color(1f, 1f, 1f, 0.55f);
+        btn.colors = colors;
 
         var textGo = new GameObject("Text", typeof(RectTransform));
         textGo.layer = LayerMask.NameToLayer("UI");
@@ -266,9 +274,11 @@ public class TutorialPreview3DOverlay : MonoBehaviour
         var t = textGo.AddComponent<Text>();
         t.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
         t.fontSize = 26;
+        t.fontStyle = FontStyle.Bold;
         t.alignment = TextAnchor.MiddleCenter;
-        t.color = new Color32(40, 44, 52, 255);
+        t.color = TutorialUiArt.TitleBrown;
         t.text = label;
+        t.raycastTarget = false;
         t.horizontalOverflow = HorizontalWrapMode.Overflow;
         t.verticalOverflow = VerticalWrapMode.Truncate;
         return btn;

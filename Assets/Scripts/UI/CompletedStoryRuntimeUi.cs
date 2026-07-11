@@ -337,18 +337,62 @@ public static class CompletedStoryRuntimeUi
         toggleRt.anchorMin = new Vector2(0f, 0f);
         toggleRt.anchorMax = new Vector2(0f, 0f);
         toggleRt.pivot = new Vector2(0f, 0f);
+        toggleRt.sizeDelta = new Vector2(188f, 72f);
         toggleRt.anchoredPosition = GetStoryToggleAnchoredPosition();
+    }
+
+    /// <summary>「故事阅读 / 收起故事」：与教程页一致的黄橙胶囊按钮（Resources/TutorialUi/Button）。</summary>
+    public static void ApplyStoryToggleButtonStyle(Button button)
+    {
+        if (button == null)
+            return;
+
+        var rt = button.GetComponent<RectTransform>();
+        if (rt != null)
+            rt.sizeDelta = new Vector2(188f, 72f);
+
+        var img = button.GetComponent<Image>();
+        if (img != null)
+            TutorialUiArt.ApplyButtonBackground(img);
+
+        var text = button.GetComponentInChildren<Text>(true);
+        if (text != null)
+        {
+            text.fontSize = 26;
+            text.fontStyle = FontStyle.Bold;
+            text.alignment = TextAnchor.MiddleCenter;
+            text.color = TutorialUiArt.TitleBrown;
+            text.raycastTarget = false;
+
+            var outline = text.GetComponent<Outline>();
+            if (outline != null)
+            {
+#if UNITY_EDITOR
+                if (!Application.isPlaying)
+                    Object.DestroyImmediate(outline);
+                else
+#endif
+                    Object.Destroy(outline);
+            }
+        }
+
+        var colors = button.colors;
+        colors.normalColor = Color.white;
+        colors.highlightedColor = new Color(1f, 0.98f, 0.94f, 1f);
+        colors.pressedColor = new Color(0.92f, 0.88f, 0.8f, 1f);
+        colors.selectedColor = Color.white;
+        colors.disabledColor = new Color(1f, 1f, 1f, 0.55f);
+        button.colors = colors;
     }
 
     public static Button CreateStoryToggleButton(Transform parent, string label = "故事阅读")
     {
         var go = CreateUiObject(parent, "StoryToggleButton");
         var rt = go.GetComponent<RectTransform>();
-        rt.sizeDelta = new Vector2(168f, 64f);
+        rt.sizeDelta = new Vector2(188f, 72f);
         ApplyStoryToggleLayout(rt);
 
         var img = go.AddComponent<Image>();
-        img.color = new Color32(255, 252, 245, 235);
         var button = go.AddComponent<Button>();
         button.targetGraphic = img;
 
@@ -356,10 +400,8 @@ public static class CompletedStoryRuntimeUi
         StretchFull(labelGo.GetComponent<RectTransform>());
         var text = labelGo.AddComponent<Text>();
         text.font = Resources.GetBuiltinResource<Font>("LegacyRuntime.ttf");
-        text.fontSize = 26;
-        text.alignment = TextAnchor.MiddleCenter;
-        text.color = StoryPageCaptionArt.BodyBrownColor;
         text.text = label;
+        ApplyStoryToggleButtonStyle(button);
         return button;
     }
 
@@ -369,7 +411,10 @@ public static class CompletedStoryRuntimeUi
             return;
         var text = button.GetComponentInChildren<Text>();
         if (text != null)
+        {
             text.text = label ?? "";
+            text.color = TutorialUiArt.TitleBrown;
+        }
     }
 
     public static TextMeshProUGUI ResolveScrollableStoryText(

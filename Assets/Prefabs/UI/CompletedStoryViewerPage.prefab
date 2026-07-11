@@ -138,6 +138,8 @@ MonoBehaviour:
   exitButton: {fileID: 6438405023824521398}
   storyToggleButton: {fileID: 5747838808901417498}
   storyCloseButton: {fileID: 3423243125919918620}
+  panoramaToggleButton: {fileID: 4659384057912917038}
+  panoramaHintText: {fileID: 5636658978939445548}
   vrToggleButton: {fileID: 4659384057912917038}
   stereoToggleButton: {fileID: 6204380619245148257}
   vrHintText: {fileID: 5636658978939445548}
@@ -256,8 +258,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 0, y: 0}
-  m_AnchoredPosition: {x: -39, y: 627}
-  m_SizeDelta: {x: 360, y: 365}
+  m_AnchoredPosition: {x: 48, y: 336}
+  m_SizeDelta: {x: 188, y: 72}
   m_Pivot: {x: 0, y: 0}
 --- !u!222 &4444300050533535676
 CanvasRenderer:
@@ -280,15 +282,15 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 1, g: 0.9882353, b: 0.9607843, a: 0.92156863}
+  m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_RaycastTarget: 1
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
     m_PersistentCalls:
       m_Calls: []
-  m_Sprite: {fileID: 21300000, guid: beb1671427283a7469d3970c66ecb463, type: 3}
-  m_Type: 0
+  m_Sprite: {fileID: 21300000, guid: 113d404d733301a4e906298a66479fc7, type: 3}
+  m_Type: 1
   m_PreserveAspect: 0
   m_FillCenter: 1
   m_FillMethod: 4
@@ -1745,7 +1747,7 @@ MonoBehaviour:
       m_Calls: []
   m_FontData:
     m_Font: {fileID: 12800000, guid: fdea1fd751ed11d40baa728165479493, type: 3}
-    m_FontSize: 37
+    m_FontSize: 26
     m_FontStyle: 0
     m_BestFit: 0
     m_MinSize: 3
@@ -1756,7 +1758,7 @@ MonoBehaviour:
     m_HorizontalOverflow: 0
     m_VerticalOverflow: 0
     m_LineSpacing: 1
-  m_Text: "\u6C89\u6D78VR"
+  m_Text: "360\u00B0 \u5168\u666F"
 --- !u!1 &5476287252640903067
 GameObject:
   m_ObjectHideFlags: 0
@@ -1945,7 +1947,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0, y: 0}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 0, y: 16}
+  m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &8871403553480631594
@@ -1969,8 +1971,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   m_Material: {fileID: 0}
-  m_Color: {r: 0.28, g: 0.16, b: 0.08, a: 1}
-  m_RaycastTarget: 1
+  m_Color: {r: 0.35, g: 0.18, b: 0.08, a: 1}
+  m_RaycastTarget: 0
   m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
   m_Maskable: 1
   m_OnCullStateChanged:
@@ -1978,8 +1980,8 @@ MonoBehaviour:
       m_Calls: []
   m_FontData:
     m_Font: {fileID: 12800000, guid: fdea1fd751ed11d40baa728165479493, type: 3}
-    m_FontSize: 36
-    m_FontStyle: 0
+    m_FontSize: 26
+    m_FontStyle: 1
     m_BestFit: 0
     m_MinSize: 3
     m_MaxSize: 40
@@ -2284,7 +2286,7 @@ GameObject:
   - component: {fileID: 3252168821935570843}
   - component: {fileID: 4659384057912917038}
   m_Layer: 5
-  m_Name: VrToggleButton
+  m_Name: PanoramaToggleButton
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -2307,8 +2309,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 1, y: 1}
   m_AnchorMax: {x: 1, y: 1}
-  m_AnchoredPosition: {x: 28, y: 95}
-  m_SizeDelta: {x: 360.0059, y: 365.1978}
+  m_AnchoredPosition: {x: -28, y: -28}
+  m_SizeDelta: {x: 200, y: 72}
   m_Pivot: {x: 1, y: 1}
 --- !u!222 &5333367798797332582
 CanvasRenderer:

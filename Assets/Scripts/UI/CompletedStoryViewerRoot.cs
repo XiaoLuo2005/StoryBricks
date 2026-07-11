@@ -145,6 +145,7 @@ public class CompletedStoryViewerRoot : MonoBehaviour
             StoryFlowBackButtonUi.BindNavigation(_exitButton, exitButtonLabel, backSceneName);
 
         HideLegacyStereoButton();
+        EnsurePanoramaButton();
         EnsureStoryToggleButton();
         RefreshStoryReaderUi();
     }
@@ -153,6 +154,63 @@ public class CompletedStoryViewerRoot : MonoBehaviour
     {
         if (pageView.stereoToggleButton != null)
             pageView.stereoToggleButton.gameObject.SetActive(false);
+    }
+
+    /// <summary>
+    /// 场景曾把全景按钮从 Prefab 实例里删掉；缺失时运行时补建，并固定到右上角。
+    /// </summary>
+    void EnsurePanoramaButton()
+    {
+        if (pageView == null || pageView.canvas == null)
+            return;
+
+        if (_panoramaToggleButton == null)
+            pageView.WireFromSceneHierarchy();
+
+        _panoramaToggleButton = pageView.panoramaToggleButton ?? pageView.vrToggleButton;
+        if (_panoramaToggleButton == null)
+        {
+            _panoramaToggleButton = CompletedStoryViewerUiBuilder.CreateTopBarButton(
+                pageView.canvas.transform,
+                "PanoramaToggleButton",
+                PanoramaEnterLabel,
+                0);
+            pageView.panoramaToggleButton = _panoramaToggleButton;
+            pageView.vrToggleButton = _panoramaToggleButton;
+        }
+
+        if (_panoramaHintText == null)
+        {
+            _panoramaHintText = CompletedStoryViewerUiBuilder.CreatePanoramaHint(pageView.canvas.transform);
+            pageView.panoramaHintText = _panoramaHintText;
+            pageView.vrHintText = _panoramaHintText;
+        }
+
+        _panoramaToggleButton.gameObject.SetActive(true);
+        var rt = _panoramaToggleButton.GetComponent<RectTransform>();
+        if (rt != null)
+        {
+            rt.SetParent(pageView.canvas.transform, false);
+            rt.anchorMin = new Vector2(1f, 1f);
+            rt.anchorMax = new Vector2(1f, 1f);
+            rt.pivot = new Vector2(1f, 1f);
+            rt.sizeDelta = new Vector2(200f, 72f);
+            rt.anchoredPosition = new Vector2(-28f, -28f);
+            rt.SetAsLastSibling();
+        }
+
+        var img = _panoramaToggleButton.GetComponent<Image>();
+        if (img != null)
+            TutorialUiArt.ApplyButtonBackground(img);
+
+        var label = _panoramaToggleButton.GetComponentInChildren<Text>();
+        if (label != null)
+        {
+            label.text = PanoramaEnterLabel;
+            label.fontSize = 26;
+            label.color = TutorialUiArt.TitleBrown;
+            label.raycastTarget = false;
+        }
     }
 
     void EnsureStoryToggleButton()
@@ -200,6 +258,23 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         _panoramaPlayer = GetComponent<GyroPanorama360Player>();
         if (_panoramaPlayer == null)
             _panoramaPlayer = gameObject.AddComponent<GyroPanorama360Player>();
+
+        _panoramaPlayer.OnPlaybackStateChanged -= OnPanoramaPlaybackStateChanged;
+        _panoramaPlayer.OnPlaybackStateChanged += OnPanoramaPlaybackStateChanged;
+    }
+
+    void OnPanoramaPlaybackStateChanged(bool ok, string error)
+    {
+        if (ok || !_panoramaActive)
+            return;
+
+        ShowTransientHint(string.IsNullOrWhiteSpace(error) ? "全景加载失败" : error);
+    }
+
+    void OnDestroy()
+    {
+        if (_panoramaPlayer != null)
+            _panoramaPlayer.OnPlaybackStateChanged -= OnPanoramaPlaybackStateChanged;
     }
 
     void WireControls()
@@ -435,6 +510,12 @@ public class CompletedStoryViewerRoot : MonoBehaviour
             return;
 
         string path = CompletedStoryStore.GetPagePanoramaPath(_save.saveId, page);
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            ShowTransientHint("本页暂无 360° 全景");
+            return;
+        }
+
         _panoramaPlayer.SetPageSource(null, path);
     }
 
@@ -442,6 +523,8 @@ public class CompletedStoryViewerRoot : MonoBehaviour
     {
         if (_save == null || _pages == null || _index < 0 || _index >= _pages.Length)
             return false;
+
+        // 仅当存在专用全景文件时可进；错误的 AI 全景需重新创作生成
         return !string.IsNullOrWhiteSpace(
             CompletedStoryStore.GetPagePanoramaPath(_save.saveId, _pages[_index]));
     }
@@ -458,6 +541,9 @@ public class CompletedStoryViewerRoot : MonoBehaviour
 
     void EnterPanoramaMode()
     {
+        if (_panoramaPlayer == null)
+            EnsurePanoramaPlayer();
+
         if (!CurrentPageHasPanorama())
         {
             ShowTransientHint("本页暂无 360° 全景");
@@ -506,7 +592,11 @@ public class CompletedStoryViewerRoot : MonoBehaviour
     void SetFlatViewVisible(bool visible)
     {
         if (_pageImage != null)
+        {
             _pageImage.enabled = visible;
+            // 进全景时彻底关掉平面页，避免和球面叠成「中间多一张图」
+            _pageImage.gameObject.SetActive(visible);
+        }
 
         if (!visible)
             _storyPanelVisible = false;
@@ -528,7 +618,7 @@ public class CompletedStoryViewerRoot : MonoBehaviour
         _panoramaHintText.gameObject.SetActive(true);
         string lookHint = SystemInfo.supportsGyroscope
             ? "转动设备环视"
-            : "按住鼠标拖拽环视";
+            : "按住鼠标左键拖拽环视";
         _panoramaHintText.text = $"{lookHint} · 360° 全景";
     }
 

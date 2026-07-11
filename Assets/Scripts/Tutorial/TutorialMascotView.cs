@@ -1,3 +1,4 @@
+using System.Reflection;
 using Gilzoide.LottiePlayer;
 using UnityEngine;
 
@@ -9,6 +10,23 @@ public static class TutorialMascotView
 {
     const string DefaultResourcesPath = "TutorialMascot/AnimaBotLottie";
     const string MascotObjectName = "TutorialMascot";
+    const string CacheKey = "storybricks_tutorial_mascot";
+
+    static readonly FieldInfo AnimationAssetField = typeof(ImageLottiePlayer).GetField(
+        "_animationAsset",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+    static readonly FieldInfo AutoPlayField = typeof(ImageLottiePlayer).GetField(
+        "_autoPlay",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+    static readonly FieldInfo WidthField = typeof(ImageLottiePlayer).GetField(
+        "_width",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+    static readonly FieldInfo HeightField = typeof(ImageLottiePlayer).GetField(
+        "_height",
+        BindingFlags.Instance | BindingFlags.NonPublic);
+    static readonly FieldInfo LoopField = typeof(ImageLottiePlayer).GetField(
+        "_loop",
+        BindingFlags.Instance | BindingFlags.NonPublic);
 
     /// <summary>
     /// 在教程页吉祥物锚点显示 Lottie。若 anchor 为空则跳过。
@@ -31,6 +49,20 @@ public static class TutorialMascotView
             return;
         }
 
+        // 必须挂 LottieAnimationAsset：SetAnimation(native) 会清空 _animationAsset，
+        // 随后 OnEnable/OnValidate 会把 native 销毁，但 PlayRoutine 仍在跑 → Animation is null。
+        var asset = ScriptableObject.CreateInstance<LottieAnimationAsset>();
+        asset.hideFlags = HideFlags.HideAndDontSave;
+        asset.Json = ta.text;
+        asset.CacheKey = CacheKey;
+        asset.ResourcePath = "";
+        if (!asset.UpdateMetadata())
+        {
+            Debug.LogError("TutorialMascotView: Lottie 数据无法解析，请确认导出为有效 Lottie JSON。");
+            Object.Destroy(asset);
+            return;
+        }
+
         var go = new GameObject(MascotObjectName, typeof(RectTransform), typeof(CanvasRenderer));
         go.layer = LayerMask.NameToLayer("UI");
         go.SetActive(false);
@@ -42,23 +74,14 @@ public static class TutorialMascotView
         var player = go.AddComponent<ImageLottiePlayer>();
         player.raycastTarget = false;
 
-        // 必须先关掉自动播放；OnEnable 会清空 animation，OnStart 会在 SetAnimation 之前 Play。
-        SetSerializedField(player, "_autoPlay", AutoPlayEvent.No);
-        SetSerializedField(player, "_width", 320);
-        SetSerializedField(player, "_height", 320);
-        SetSerializedField(player, "_loop", true);
+        AnimationAssetField?.SetValue(player, asset);
+        AutoPlayField?.SetValue(player, AutoPlayEvent.OnEnable);
+        WidthField?.SetValue(player, 320);
+        HeightField?.SetValue(player, 320);
+        LoopField?.SetValue(player, true);
 
-        var native = new NativeLottieAnimation(ta.text, "storybricks_tutorial_mascot", "");
-        if (!native.IsCreated)
-        {
-            Debug.LogError("TutorialMascotView: Lottie 数据无法解析，请确认导出为有效 Lottie JSON。");
-            Object.Destroy(go);
-            return;
-        }
-
+        go.AddComponent<TutorialMascotAssetOwner>().Bind(asset);
         go.SetActive(true);
-        player.SetAnimation(native);
-        player.Play();
     }
 
     static void StretchFull(RectTransform rt)
@@ -68,12 +91,25 @@ public static class TutorialMascotView
         rt.offsetMin = Vector2.zero;
         rt.offsetMax = Vector2.zero;
     }
+}
 
-    static void SetSerializedField<T>(object target, string fieldName, T value)
+/// <summary>销毁吉祥物时一并释放运行时创建的 LottieAnimationAsset。</summary>
+[DisallowMultipleComponent]
+sealed class TutorialMascotAssetOwner : MonoBehaviour
+{
+    LottieAnimationAsset _asset;
+
+    public void Bind(LottieAnimationAsset asset)
     {
-        var field = target.GetType().GetField(
-            fieldName,
-            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-        field?.SetValue(target, value);
+        _asset = asset;
+    }
+
+    void OnDestroy()
+    {
+        if (_asset != null)
+        {
+            Destroy(_asset);
+            _asset = null;
+        }
     }
 }
